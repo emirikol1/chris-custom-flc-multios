@@ -1,0 +1,74 @@
+{
+  "name": "chris-custom-flc-multios",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chris's Custom FLC MultiOS — Chromium join client for Foundry VTT (Windows, macOS, Linux)",
+  "author": "Chris <noreply@invalid>",
+  "homepage": "https://github.com/chris-custom-flc-multios/chris-custom-flc-multios",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "vitest run",
+    "predist": "bash scripts/pre-dist.sh",
+    "dist": "npm run predist && electron-builder",
+    "dist:linux": "npm run predist && electron-builder --linux AppImage deb",
+    "dist:win": "npm run predist && electron-builder --win nsis",
+    "dist:mac": "npm run predist && electron-builder --mac dmg"
+  },
+  "devDependencies": {
+    "electron": "^43.3.0",
+    "electron-builder": "^26.0.12",
+    "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "electron-log": "^5.4.4"
+  },
+  "build": {
+    "appId": "com.chris.custom-flc.multios",
+    "productName": "Chris's Custom FLC MultiOS",
+    "copyright": "Copyright © Chris",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "icon.png",
+      "package.json"
+    ],
+    "asar": true,
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Game",
+      "icon": "icon.png",
+      "executableName": "chris-custom-flc-multios"
+    },
+    "deb": {
+      "depends": ["libgtk-3-0", "libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils"],
+      "maintainer": "Chris <noreply@invalid>"
+    },
+    "win": {
+      "target": ["nsis"],
+      "icon": "icon.png",
+      "executableName": "ChrisCustomFLCMultiOS"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Chris's Custom FLC MultiOS"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "category": "public.app-category.games",
+      "icon": "icon.png",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-mac.${ext}"
+    }
+  }
+}

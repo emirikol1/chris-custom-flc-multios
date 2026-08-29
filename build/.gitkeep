@@ -1,0 +1,2 @@
+# This directory is not used. electron-builder reads icon.png from the repo root
+# and copies generated platform icons here at build time.

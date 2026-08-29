@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chris's Custom FLC MultiOS — Join Server</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="header-brand">
+        <h1 class="app-title">Chris's Custom FLC MultiOS</h1>
+        <span class="version-badge" id="app-version">v0.1.0</span>
+      </div>
+      <div class="header-toolbar" role="toolbar" aria-label="Connection options">
+        <label class="toolbar-toggle" title="Connect in a private session">
+          <input type="checkbox" id="incognito-toggle" />
+          <span>Incognito</span>
+        </label>
+        <span class="webgl-badge" id="webgl-status" title="WebGL rendering mode">WebGL: —</span>
+        <div class="webgl-override" role="group" aria-label="WebGL override">
+          <label class="sr-only" for="webgl-override-select">WebGL mode</label>
+          <select id="webgl-override-select" aria-describedby="webgl-status">
+            <option value="auto">Auto (hardware)</option>
+            <option value="hardware">Force Hardware</option>
+            <option value="software">Force Software</option>
+          </select>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <section class="panel server-form-panel" aria-labelledby="server-form-heading">
+        <div class="panel-header">
+          <h2 id="server-form-heading">Add Server</h2>
+          <button type="button" class="btn btn-ghost btn-sm" id="form-cancel-btn" hidden>
+            Cancel edit
+          </button>
+        </div>
+        <form id="server-form" class="server-form" novalidate>
+          <input type="hidden" id="server-edit-id" value="" />
+          <div class="form-row">
+            <label for="server-label">Label <span class="required">*</span></label>
+            <input
+              type="text"
+              id="server-label"
+              name="label"
+              autocomplete="off"
+              placeholder="Server name"
+              required
+            />
+          </div>
+          <div class="form-row">
+            <label for="server-url">URL <span class="required">*</span></label>
+            <input
+              type="text"
+              id="server-url"
+              name="url"
+              autocomplete="off"
+              placeholder="https://example.com or hostname"
+              required
+            />
+          </div>
+          <div class="form-row">
+            <label for="server-notes">Notes <span class="optional">(optional)</span></label>
+            <textarea
+              id="server-notes"
+              name="notes"
+              rows="3"
+              placeholder="Notes, reminders, etc."
+            ></textarea>
+          </div>
+          <div class="form-row form-row-split">
+            <div>
+              <label for="server-username">Username <span class="optional">(optional)</span></label>
+              <input
+                type="text"
+                id="server-username"
+                name="username"
+                autocomplete="off"
+                placeholder="Foundry username"
+              />
+            </div>
+            <div>
+              <label for="server-password">Password <span class="optional">(optional)</span></label>
+              <div class="password-field">
+                <input
+                  type="password"
+                  id="server-password"
+                  name="password"
+                  autocomplete="off"
+                  placeholder="Foundry password"
+                />
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm"
+                  id="password-toggle-btn"
+                  aria-pressed="false"
+                  aria-label="Show password"
+                >
+                  Show
+                </button>
+              </div>
+            </div>
+          </div>
+          <p class="form-error" id="form-error" role="alert" hidden></p>
+          <button type="submit" class="btn btn-primary" id="server-form-submit">Add Server</button>
+        </form>
+      </section>
+
+      <section class="panel server-list-panel" aria-labelledby="server-list-heading">
+        <h2 id="server-list-heading">Your servers</h2>
+        <p class="empty-hint" id="server-list-empty" hidden>No servers yet. Add one above.</p>
+        <div id="server-list" class="server-list" role="list"></div>
+      </section>
+    </main>
+
+    <div id="notifications" class="notifications" aria-live="polite" aria-relevant="additions"></div>
+
+    <script src="renderer-log.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

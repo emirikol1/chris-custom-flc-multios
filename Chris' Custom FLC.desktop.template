@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Chris's Custom FLC MultiOS
+Comment=Join remote Foundry VTT games (dev launch.sh)
+Exec=__APP_DIR__/launch.sh %U
+Icon=__APP_DIR__/icon.png
+Terminal=false
+Categories=Game;Network;
+StartupWMClass=ChrisCustomFLCMultiOS
