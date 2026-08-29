@@ -10,10 +10,10 @@
     "start": "electron .",
     "test": "vitest run",
     "predist": "node scripts/pre-dist.js",
-    "dist": "npm run predist && electron-builder",
-    "dist:linux": "npm run predist && electron-builder --linux AppImage deb",
-    "dist:win": "npm run predist && electron-builder --win nsis",
-    "dist:mac": "npm run predist && electron-builder --mac dmg"
+    "dist": "npm run predist && electron-builder --publish never",
+    "dist:linux": "npm run predist && electron-builder --linux AppImage deb --publish never",
+    "dist:win": "npm run predist && electron-builder --win nsis --publish never",
+    "dist:mac": "npm run predist && electron-builder --mac dmg --publish never"
   },
   "devDependencies": {
     "electron": "^43.3.0",
