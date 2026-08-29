@@ -2,9 +2,16 @@ name: Build installers
 
 on:
   push:
+    branches: [master, main]
     tags:
       - "v*"
   workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
 jobs:
   linux:
@@ -23,6 +30,7 @@ jobs:
           path: |
             dist/*.AppImage
             dist/*.deb
+          if-no-files-found: error
 
   windows:
     runs-on: windows-latest
@@ -38,6 +46,7 @@ jobs:
         with:
           name: windows-installer
           path: dist/*.exe
+          if-no-files-found: error
 
   macos:
     runs-on: macos-latest
@@ -53,3 +62,24 @@ jobs:
         with:
           name: macos-dmg
           path: dist/*.dmg
+          if-no-files-found: error
+
+  publish-release:
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Upload every OS installer to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          find artifacts -type f \( -name '*.deb' -o -name '*.AppImage' -o -name '*.exe' -o -name '*.dmg' \) -print
+          mapfile -t FILES < <(find artifacts -type f \( -name '*.deb' -o -name '*.AppImage' -o -name '*.exe' -o -name '*.dmg' \))
+          test "${#FILES[@]}" -ge 4
+          gh release view v0.1.0 >/dev/null
+          gh release upload v0.1.0 "${FILES[@]}" --clobber
+          gh release edit v0.1.0 --notes-file RELEASE-NOTES.md

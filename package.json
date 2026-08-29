@@ -9,7 +9,7 @@
   "scripts": {
     "start": "electron .",
     "test": "vitest run",
-    "predist": "bash scripts/pre-dist.sh",
+    "predist": "node scripts/pre-dist.js",
     "dist": "npm run predist && electron-builder",
     "dist:linux": "npm run predist && electron-builder --linux AppImage deb",
     "dist:win": "npm run predist && electron-builder --win nsis",
@@ -42,7 +42,8 @@
       "target": ["AppImage", "deb"],
       "category": "Game",
       "icon": "icon.png",
-      "executableName": "chris-custom-flc-multios"
+      "executableName": "chris-custom-flc-multios",
+      "artifactName": "ChrisCustomFLC-MultiOS-${version}-linux.${ext}"
     },
     "deb": {
       "depends": ["libgtk-3-0", "libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils"],
@@ -51,14 +52,16 @@
     "win": {
       "target": ["nsis"],
       "icon": "icon.png",
-      "executableName": "ChrisCustomFLCMultiOS"
+      "executableName": "ChrisCustomFLCMultiOS",
+      "artifactName": "ChrisCustomFLC-MultiOS-${version}-windows-setup.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Chris's Custom FLC MultiOS"
+      "shortcutName": "Chris's Custom FLC MultiOS",
+      "artifactName": "ChrisCustomFLC-MultiOS-${version}-windows-setup.${ext}"
     },
     "mac": {
       "target": ["dmg"],
@@ -68,7 +71,7 @@
       "gatekeeperAssess": false
     },
     "dmg": {
-      "artifactName": "${productName}-${version}-mac.${ext}"
+      "artifactName": "ChrisCustomFLC-MultiOS-${version}-mac.${ext}"
     }
   }
 }

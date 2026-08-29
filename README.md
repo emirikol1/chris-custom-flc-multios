@@ -1,24 +1,22 @@
 # Chris's Custom FLC MultiOS
 
-Join **Foundry VTT** games from a desktop app. Each install starts with an empty server list — you add your own.
+Join Foundry VTT games from Windows, macOS, or Linux.
 
-## Download and install
+## Install
 
-Open **[Releases](https://github.com/emirikol1/chris-custom-flc-multios/releases)** → download **one** file for your system → install it.
+1. Open **[Releases](https://github.com/emirikol1/chris-custom-flc-multios/releases/latest)**
+2. Download **one** file for your computer
+3. Open that file to install
 
-| You use | Download | Then |
-|---------|----------|------|
-| Linux Mint / Ubuntu / Debian | `chris-custom-flc-multios_*_amd64.deb` | Double-click the file (or `sudo dpkg -i` that file) |
-| Other Linux | `*.AppImage` | Make it executable, then double-click |
-| Windows | `*Setup*.exe` | Double-click, next, next |
-| macOS | `*.dmg` | Open, drag to Applications |
+| Computer | File | Install |
+|----------|------|---------|
+| Windows | `*-windows-setup.exe` | Double-click |
+| macOS | `*-mac.dmg` | Double-click, drag to Applications |
+| Linux Mint / Ubuntu / Debian | `*.deb` | Double-click |
+| Other Linux | `*.AppImage` | Allow executing file as program, then double-click |
 
-Windows and macOS files appear on Releases when those builds are published. Linux `.deb` and AppImage are on **[v0.1.0](https://github.com/emirikol1/chris-custom-flc-multios/releases/tag/v0.1.0)**.
-
-You do **not** need Git, Git LFS, or Node.js.
+No Git. No Node. Each install starts with an empty server list.
 
 ---
 
-Passwords you save in the app are stored as plain text on that computer only.
-
-Developers: `npm install && npm start`. Packaged installers: `npm run dist:linux` (and `dist:win` / `dist:mac` on those OSes).
+Developers: `npm install && npm start`. Build installers: `npm run dist:linux` / `dist:win` / `dist:mac`.
