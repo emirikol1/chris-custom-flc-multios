@@ -8,10 +8,14 @@ Install [Git LFS](https://git-lfs.com/) **before** cloning (or run `git lfs inst
 
 ```bash
 git lfs install
-git clone <this-repo-url>
-cd Chris-Custom-FLC-MultiOS
+git clone https://github.com/emirikol1/chris-custom-flc-multios.git
+cd chris-custom-flc-multios
 git lfs pull
 ```
+
+Do **not** use GitHub’s “Download ZIP” for the installers — zip archives only contain tiny LFS pointer files, not the real AppImage/`.deb`. Clone with Git LFS as above.
+
+After `git lfs pull`, `dist/*.AppImage` and `dist/*.deb` should be ~100 MB each, not ~130-byte text files.
 
 ## Install (end users)
 
