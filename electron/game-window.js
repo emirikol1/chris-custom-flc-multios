@@ -180,10 +180,23 @@ async function maybeAutologin(win, creds) {
 }
 
 /**
+ * Window-state key for a game session. Saved servers get their own layout;
+ * incognito or anonymous connections share the generic one.
+ * @param {string | undefined} serverId
+ * @param {boolean | undefined} incognito
+ * @returns {string}
+ */
+function sessionLayoutKey(serverId, incognito) {
+  if (incognito || !serverId) return 'game';
+  return `game:${serverId}`;
+}
+
+/**
  * @param {import('electron').BrowserWindow} parent
  * @param {import('electron').Session} gameSession
+ * @param {string} layoutKey session layout key from sessionLayoutKey()
  */
-function enablePopouts(parent, gameSession) {
+function enablePopouts(parent, gameSession, layoutKey) {
   parent.webContents.setWindowOpenHandler(() => ({
     action: 'allow',
     overrideBrowserWindowOptions: {
@@ -199,11 +212,14 @@ function enablePopouts(parent, gameSession) {
   }));
 
   parent.webContents.on('did-create-window', (child) => {
-    logInfo('[game-window] popout opened');
+    const slot = acquirePopoutSlot(layoutKey);
+    const key = popoutStateKey(layoutKey, slot);
+    logInfo('[game-window] popout opened', { slot });
     if (deps.windowState) {
-      const bounds = deps.windowState.restore('popout', {
-        width: child.getBounds().width,
-        height: child.getBounds().height,
+      const requested = child.getBounds();
+      const bounds = deps.windowState.restore(key, {
+        width: requested.width,
+        height: requested.height,
       });
       if (bounds.width && bounds.height) {
         child.setSize(bounds.width, bounds.height);
@@ -211,12 +227,55 @@ function enablePopouts(parent, gameSession) {
       if (Number.isFinite(bounds.x) && Number.isFinite(bounds.y)) {
         child.setPosition(bounds.x, bounds.y);
       }
-      deps.windowState.track(child, 'popout');
+      deps.windowState.track(child, key);
     }
     child.on('closed', () => {
-      logInfo('[game-window] popout closed');
+      releasePopoutSlot(layoutKey, slot);
+      logInfo('[game-window] popout closed', { slot });
     });
   });
+}
+
+/** Popout slots currently in use, per session layout key (1-based). */
+const popoutSlotsInUse = new Map();
+
+/**
+ * Each concurrently open popout of a session gets its own remembered
+ * size/position. The first popout you open is slot 1, the second slot 2,
+ * etc.; a slot is freed when its window closes so the next popout reuses it.
+ * @param {string} layoutKey
+ * @returns {number}
+ */
+function acquirePopoutSlot(layoutKey) {
+  let used = popoutSlotsInUse.get(layoutKey);
+  if (!used) {
+    used = new Set();
+    popoutSlotsInUse.set(layoutKey, used);
+  }
+  let slot = 1;
+  while (used.has(slot)) slot += 1;
+  used.add(slot);
+  return slot;
+}
+
+/**
+ * @param {string} layoutKey
+ * @param {number} slot
+ */
+function releasePopoutSlot(layoutKey, slot) {
+  const used = popoutSlotsInUse.get(layoutKey);
+  if (used) {
+    used.delete(slot);
+    if (used.size === 0) popoutSlotsInUse.delete(layoutKey);
+  }
+}
+
+/**
+ * @param {string} layoutKey
+ * @param {number} slot
+ */
+function popoutStateKey(layoutKey, slot) {
+  return `${layoutKey}:popout-${slot}`;
 }
 
 /**
@@ -256,8 +315,14 @@ function openGameWindow(payload, gpuPrefsPath) {
     : `persist:game-${id}`;
   const gameSession = session.fromPartition(partition);
 
+  // Window layout is remembered per session (per saved server), so each
+  // server can have its own game-window and popout arrangement. A server that
+  // has never been opened falls back to the last generic game layout.
+  const layoutKey = sessionLayoutKey(id, incognito);
   const defaults = { width: 1280, height: 800 };
-  const bounds = deps.windowState ? deps.windowState.restore('game', defaults) : defaults;
+  const bounds = deps.windowState
+    ? deps.windowState.restore(layoutKey, deps.windowState.restore('game', defaults))
+    : defaults;
 
   const win = new BrowserWindow({
     width: bounds.width,
@@ -278,7 +343,9 @@ function openGameWindow(payload, gpuPrefsPath) {
     win.maximize();
   }
   if (deps.windowState) {
-    deps.windowState.track(win, 'game');
+    deps.windowState.track(win, layoutKey);
+    // Also keep the generic key fresh so new servers start from a sane layout.
+    if (layoutKey !== 'game') deps.windowState.track(win, 'game');
   }
 
   const windowTitle = sanitizeTitle(label);
@@ -301,7 +368,7 @@ function openGameWindow(payload, gpuPrefsPath) {
     gameWindowsById.set(id, win);
   }
 
-  enablePopouts(win, gameSession);
+  enablePopouts(win, gameSession, layoutKey);
 
   if (typeof deps.onGameWindowOpened === 'function') {
     deps.onGameWindowOpened(win);

@@ -30,6 +30,10 @@ contextBridge.exposeInMainWorld('flc', {
     get: () => ipcRenderer.invoke('prefs:get'),
     set: (patch) => ipcRenderer.invoke('prefs:set', patch),
   },
+  settings: {
+    exportToFile: () => ipcRenderer.invoke('settings:export'),
+    importFromFile: () => ipcRenderer.invoke('settings:import'),
+  },
   ai: {
     getPresets: () => ipcRenderer.invoke('ai:get-presets'),
     getSettings: () => ipcRenderer.invoke('ai:get-settings'),

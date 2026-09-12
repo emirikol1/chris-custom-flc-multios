@@ -92,8 +92,20 @@ function pickBounds(saved, defaults, displays) {
       y = s.y;
     }
   }
+  // Defaults may themselves be a restored state (layout inheritance): honour
+  // its position too, subject to the same visibility check.
+  const d = /** @type {Partial<WindowState>} */ (defaults || {});
+  if (x === undefined && isFiniteNumber(d.x) && isFiniteNumber(d.y)) {
+    const rect = { x: d.x, y: d.y, width, height };
+    if (isVisibleOnAnyDisplay(rect, displays)) {
+      x = d.x;
+      y = d.y;
+    }
+  }
 
-  return { x, y, width, height, maximized: s.maximized === true };
+  const maximized =
+    s.maximized === true || (s.maximized === undefined && d.maximized === true);
+  return { x, y, width, height, maximized };
 }
 
 /**

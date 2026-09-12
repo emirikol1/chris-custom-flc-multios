@@ -17,6 +17,7 @@ Each install starts with an **empty server list** — no servers are bundled or 
 - **Incognito** mode: connect in a private, non-persistent browser session
 - Re-opening a server focuses the existing game window instead of spawning duplicates
 - **Popout windows** work: Foundry popouts (`window.open`, PopOut! module) open as real child windows sharing the game session
+- **Your servers** panel collapses to a compact list (server + session username + Connect)
 
 ### Rendering & compatibility
 
@@ -41,13 +42,16 @@ Each install starts with an **empty server list** — no servers are bundled or 
 - **Hosted free tier:** Groq, Cerebras, Google Gemini (AI Studio), OpenRouter (free models), Mistral (Experiment)
 - **Paid:** OpenAI
 - **Custom:** any OpenAI-compatible `/v1` API URL
-- **Mud Setup** panel appears when Mud is on: pick a provider, press **Test Server** to fill the model dropdown, choose a model, **Save**. Hosted presets link to their free key sign-up page
+- **Mud Setup** panel (below your servers) appears when Mud is on: pick a provider, press **Test Server** to fill the model dropdown, choose a model, **Save**. Hosted presets link to their free key sign-up page
+- Collapses to the provider name plus a **red/green light** showing whether the AI server is reachable and the saved model is loaded (checked on start, after Save, every minute, or by clicking the light)
+- Works with "thinking" models (Qwen3, DeepSeek-R1): `<think>` reasoning is stripped from the MUD text
 - If Mud is on but no AI server is set up yet, the app tells you what it needs (a local LM Studio/Ollama with a model loaded, or a hosted key)
 - API keys are stored only in the app's local data folder (`ai-provider.json`, user-readable only) and never in the repo or installers
 
 ### Other
 
-- Remembers size and position of the join window, game windows, the MUD window, and popouts (off-screen positions are ignored)
+- Remembers size and position of the join window, the MUD window, and — **per saved server** — the game window and each of its popouts, so every session can have its own layout (off-screen positions are ignored)
+- **Import / Export** (header buttons): one JSON file with servers (including usernames/passwords), Mud Setup (including API key), Mud options, preferences, and window layouts. Import merges servers by id or URL. The file is written owner-only; keep it private
 - Local log files for troubleshooting (no browsing data, URLs, page content, or credentials logged)
 - Small installers: English-only Chromium locale, maximum compression, spellcheck disabled (AppImage ~90 MB, .deb ~90 MB)
 - Cross-platform installers built by GitHub Actions
@@ -83,8 +87,8 @@ Then install the file that matches your OS:
 
 | OS | File in `dist/` | Install |
 |----|-----------------|---------|
-| **Linux (.deb)** | `ChrisCustomFLC-MultiOS-0.2.1-linux.deb` | Double-click or `sudo apt install ./dist/ChrisCustomFLC-MultiOS-0.2.1-linux.deb` |
-| **Linux (AppImage)** | `ChrisCustomFLC-MultiOS-0.2.1-linux.AppImage` | Mark executable (`chmod +x`), then run |
+| **Linux (.deb)** | `ChrisCustomFLC-MultiOS-0.3.0-linux.deb` | Double-click or `sudo apt install ./dist/ChrisCustomFLC-MultiOS-0.3.0-linux.deb` |
+| **Linux (AppImage)** | `ChrisCustomFLC-MultiOS-0.3.0-linux.AppImage` | Mark executable (`chmod +x`), then run |
 | **Windows** | `ChrisCustomFLC-MultiOS-*-windows-setup.exe` | Available from [Releases](https://github.com/emirikol1/chris-custom-flc-multios/releases/latest) when built |
 | **macOS** | `ChrisCustomFLC-MultiOS-*-mac.dmg` | Available from [Releases](https://github.com/emirikol1/chris-custom-flc-multios/releases/latest) when built |
 

@@ -1,4 +1,5 @@
-const { app, BrowserWindow, ipcMain, net, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, net, shell } = require('electron');
+const fs = require('fs');
 const path = require('path');
 const {
   getGpuPrefsPath,
@@ -55,7 +56,13 @@ const {
   loadProvider,
   testConnection,
 } = require('./ai-provider');
-const { createWindowStateStore } = require('./window-state');
+const {
+  createWindowStateStore,
+  readStates: readWindowStates,
+  writeStates: writeWindowStates,
+} = require('./window-state');
+const { buildExport, parseImport, mergeServers } = require('./settings-transfer');
+const { loadSettings: loadNarratorSettings } = require('./narrator-store');
 const {
   registerGameIpc,
   injectCaptureIntoLiveWindows,
@@ -235,6 +242,107 @@ function registerAiIpc() {
     }
     return undefined;
   });
+}
+
+function registerSettingsTransferIpc() {
+  const filters = [{ name: 'FLC settings (JSON)', extensions: ['json'] }];
+
+  ipcMain.handle('settings:export', async () => {
+    const parent = joinWindow && !joinWindow.isDestroyed() ? joinWindow : undefined;
+    const pick = await dialog.showSaveDialog(parent, {
+      title: 'Export FLC settings',
+      defaultPath: path.join(app.getPath('documents'), `flc-settings-${isoDateStamp()}.json`),
+      filters,
+    });
+    if (pick.canceled || !pick.filePath) return { ok: false, canceled: true };
+    try {
+      ensureServersFile(serversFilePath);
+      const bundle = buildExport({
+        servers: loadServers(serversFilePath),
+        aiProvider: readProviderConfig(aiProviderPath),
+        appPrefs: readAppPrefs(appPrefsPath),
+        narratorSettings: loadNarratorSettings(narratorRoot),
+        windowState: readWindowStates(getWindowStatePath()),
+        appVersion: pkg.version,
+      });
+      // Contains credentials (server passwords, API key): owner-only file.
+      fs.writeFileSync(pick.filePath, JSON.stringify(bundle, null, 2), { mode: 0o600 });
+      logInfo(`[main] settings exported (servers=${bundle.servers.length})`);
+      return { ok: true, servers: bundle.servers.length };
+    } catch (err) {
+      logError('[main] settings export failed', err);
+      return { ok: false, error: 'write_failed' };
+    }
+  });
+
+  ipcMain.handle('settings:import', async () => {
+    const parent = joinWindow && !joinWindow.isDestroyed() ? joinWindow : undefined;
+    const pick = await dialog.showOpenDialog(parent, {
+      title: 'Import FLC settings',
+      properties: ['openFile'],
+      filters,
+    });
+    if (pick.canceled || !pick.filePaths || !pick.filePaths[0]) {
+      return { ok: false, canceled: true };
+    }
+    let text;
+    try {
+      text = fs.readFileSync(pick.filePaths[0], 'utf8');
+    } catch (err) {
+      logError('[main] settings import read failed', err);
+      return { ok: false, error: 'read_failed' };
+    }
+    const parsed = parseImport(text);
+    if (!parsed.ok) {
+      logInfo(`[main] settings import rejected: ${parsed.error}`);
+      return { ok: false, error: parsed.error };
+    }
+    const b = parsed.bundle;
+    /** @type {{ ok: true, servers: { added: number, updated: number, skipped: number }, applied: string[] }} */
+    const summary = { ok: true, servers: { added: 0, updated: 0, skipped: 0 }, applied: [] };
+    try {
+      if (b.servers) {
+        ensureServersFile(serversFilePath);
+        const merged = mergeServers(loadServers(serversFilePath), b.servers);
+        saveServers(serversFilePath, merged.servers);
+        summary.servers = { added: merged.added, updated: merged.updated, skipped: merged.skipped };
+        summary.applied.push('servers');
+      }
+      if (b.aiProvider) {
+        // Explicit apiKey (even empty) replaces; missing keeps the current one.
+        writeProviderConfig(aiProviderPath, b.aiProvider);
+        summary.applied.push('aiProvider');
+      }
+      if (b.narratorSettings) {
+        narratorService.setSettings(b.narratorSettings);
+        summary.applied.push('narratorSettings');
+      }
+      if (b.windowState) {
+        writeWindowStates(getWindowStatePath(), {
+          ...readWindowStates(getWindowStatePath()),
+          ...b.windowState,
+        });
+        summary.applied.push('windowState');
+      }
+      if (b.appPrefs) {
+        const before = readAppPrefs(appPrefsPath);
+        const next = writeAppPrefs(appPrefsPath, b.appPrefs);
+        if (before.mudEnabled !== next.mudEnabled) applyMudEnabled(next.mudEnabled);
+        summary.applied.push('appPrefs');
+      }
+    } catch (err) {
+      logError('[main] settings import apply failed', err);
+      return { ok: false, error: 'apply_failed', partial: summary.applied };
+    }
+    logInfo(
+      `[main] settings imported (${summary.applied.join(',')}; servers +${summary.servers.added} ~${summary.servers.updated} !${summary.servers.skipped})`,
+    );
+    return summary;
+  });
+}
+
+function isoDateStamp() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function registerNarratorIpc() {
@@ -420,6 +528,7 @@ registerServerIpc();
 registerRendererLogIpc(ipcMain);
 registerPrefsIpc();
 registerAiIpc();
+registerSettingsTransferIpc();
 registerGameIpc(gpuPrefsPath, {
   windowState,
   isMudEnabled,

@@ -1,6 +1,12 @@
-# v0.2.1
+# v0.3.0
 
 Chris's Custom FLC MultiOS — Foundry VTT join client for Windows, macOS, and Linux.
+
+## What's new in 0.3.0
+
+- **Import / Export settings** as JSON: servers (with credentials), Mud Setup (with API key), Mud options, preferences, and window layouts. Import merges servers by id or URL.
+- **Per-session window layouts:** each saved server remembers its own game-window size/position and each of its popouts' size/position (popout 1, popout 2, …). New servers start from your last game layout.
+- **Collapsible panels:** *Your servers* collapses to server + session username + Connect; *Mud Setup* (now below the server list) collapses to the provider name and a red/green connectivity light. Collapsed state is remembered.
 
 ## Fixes in 0.2.1
 

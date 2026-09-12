@@ -10,7 +10,7 @@
     <header class="app-header">
       <div class="header-brand">
         <h1 class="app-title">Chris's Custom FLC MultiOS</h1>
-        <span class="version-badge" id="app-version">v0.2.1</span>
+        <span class="version-badge" id="app-version">v0.3.0</span>
       </div>
       <div class="header-toolbar" role="toolbar" aria-label="Connection options">
         <label class="toolbar-toggle" title="Show the FLC MUD play-by-play window while in a game">
@@ -21,6 +21,10 @@
           <input type="checkbox" id="incognito-toggle" />
           <span>Incognito</span>
         </label>
+        <div class="settings-io" role="group" aria-label="Settings backup">
+          <button type="button" class="btn btn-ghost btn-sm" id="settings-import-btn" title="Import servers, Mud setup, preferences and window layouts from a JSON file">Import</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="settings-export-btn" title="Export servers, Mud setup, preferences and window layouts to a JSON file">Export</button>
+        </div>
         <span class="webgl-badge" id="webgl-status" title="WebGL rendering mode">WebGL: —</span>
         <div class="webgl-override" role="group" aria-label="WebGL override">
           <label class="sr-only" for="webgl-override-select">WebGL mode</label>
@@ -34,51 +38,6 @@
     </header>
 
     <main class="app-main">
-      <section class="panel mud-setup-panel" id="mud-setup-panel" aria-labelledby="mud-setup-heading" hidden>
-        <div class="panel-header">
-          <h2 id="mud-setup-heading">Mud Setup</h2>
-          <span class="mud-setup-state" id="mud-setup-state">Not set up</span>
-        </div>
-        <p class="mud-setup-notice" id="mud-setup-notice" role="status" hidden>
-          FLC MUD needs an AI server: a free local one (LM Studio or Ollama with a model loaded),
-          a free hosted key (Groq, Cerebras, Gemini, OpenRouter, Mistral), or OpenAI.
-          Pick one below, press <strong>Test Server</strong>, choose a model, then <strong>Save</strong>.
-        </p>
-        <form id="mud-setup-form" class="server-form" novalidate>
-          <div class="form-row">
-            <label for="ai-preset">Provider</label>
-            <select id="ai-preset" name="preset"></select>
-            <p class="field-hint" id="ai-preset-hint"></p>
-            <a class="field-link" id="ai-signup-link" href="#" hidden>Get a free key</a>
-          </div>
-          <div class="form-row">
-            <label for="ai-base-url">Server URL</label>
-            <input type="text" id="ai-base-url" name="baseUrl" autocomplete="off" placeholder="https://host/v1" />
-          </div>
-          <div class="form-row" id="ai-key-row">
-            <label for="ai-api-key">API key</label>
-            <div class="password-field">
-              <input type="password" id="ai-api-key" name="apiKey" autocomplete="off" placeholder="Paste your key" />
-              <button type="button" class="btn btn-ghost btn-sm" id="ai-key-toggle-btn" aria-pressed="false" aria-label="Show API key">Show</button>
-            </div>
-          </div>
-          <div class="form-row form-row-split">
-            <div>
-              <button type="button" class="btn btn-secondary" id="ai-test-btn">Test Server</button>
-              <p class="field-hint" id="ai-test-result"></p>
-            </div>
-            <div>
-              <label for="ai-model">Model</label>
-              <select id="ai-model" name="model" disabled>
-                <option value="">Press Test Server first</option>
-              </select>
-            </div>
-          </div>
-          <p class="form-error" id="mud-setup-error" role="alert" hidden></p>
-          <button type="submit" class="btn btn-primary" id="mud-setup-save" disabled>Save</button>
-        </form>
-      </section>
-
       <section class="panel server-form-panel" aria-labelledby="server-form-heading">
         <div class="panel-header">
           <h2 id="server-form-heading">Add Server</h2>
@@ -172,10 +131,84 @@
       </section>
 
 
-      <section class="panel server-list-panel" aria-labelledby="server-list-heading">
-        <h2 id="server-list-heading">Your servers</h2>
-        <p class="empty-hint" id="server-list-empty" hidden>No servers yet. Add one above.</p>
-        <div id="server-list" class="server-list" role="list"></div>
+      <section class="panel server-list-panel collapsible" id="server-list-panel" aria-labelledby="server-list-heading">
+        <div class="panel-header">
+          <button
+            type="button"
+            class="panel-toggle"
+            id="server-list-toggle"
+            aria-expanded="true"
+            aria-controls="server-list-body"
+          >
+            <span class="chevron" aria-hidden="true"></span>
+            <h2 id="server-list-heading">Your servers</h2>
+          </button>
+          <span class="panel-summary" id="server-list-summary"></span>
+        </div>
+        <div id="server-list-body" class="panel-body">
+          <p class="empty-hint" id="server-list-empty" hidden>No servers yet. Add one above.</p>
+          <div id="server-list" class="server-list" role="list"></div>
+        </div>
+      </section>
+
+      <section class="panel mud-setup-panel collapsible" id="mud-setup-panel" aria-labelledby="mud-setup-heading" hidden>
+        <div class="panel-header">
+          <button
+            type="button"
+            class="panel-toggle"
+            id="mud-setup-toggle"
+            aria-expanded="true"
+            aria-controls="mud-setup-body"
+          >
+            <span class="chevron" aria-hidden="true"></span>
+            <h2 id="mud-setup-heading">Mud Setup</h2>
+          </button>
+          <span class="mud-setup-summary">
+            <span class="mud-provider" id="mud-provider-name"></span>
+            <span class="status-light unknown" id="mud-status-light" role="img" aria-label="AI server status: unknown" title="AI server: not checked"></span>
+            <span class="mud-setup-state" id="mud-setup-state">Not set up</span>
+          </span>
+        </div>
+        <div id="mud-setup-body" class="panel-body">
+        <p class="mud-setup-notice" id="mud-setup-notice" role="status" hidden>
+          FLC MUD needs an AI server: a free local one (LM Studio or Ollama with a model loaded),
+          a free hosted key (Groq, Cerebras, Gemini, OpenRouter, Mistral), or OpenAI.
+          Pick one below, press <strong>Test Server</strong>, choose a model, then <strong>Save</strong>.
+        </p>
+        <form id="mud-setup-form" class="server-form" novalidate>
+          <div class="form-row">
+            <label for="ai-preset">Provider</label>
+            <select id="ai-preset" name="preset"></select>
+            <p class="field-hint" id="ai-preset-hint"></p>
+            <a class="field-link" id="ai-signup-link" href="#" hidden>Get a free key</a>
+          </div>
+          <div class="form-row">
+            <label for="ai-base-url">Server URL</label>
+            <input type="text" id="ai-base-url" name="baseUrl" autocomplete="off" placeholder="https://host/v1" />
+          </div>
+          <div class="form-row" id="ai-key-row">
+            <label for="ai-api-key">API key</label>
+            <div class="password-field">
+              <input type="password" id="ai-api-key" name="apiKey" autocomplete="off" placeholder="Paste your key" />
+              <button type="button" class="btn btn-ghost btn-sm" id="ai-key-toggle-btn" aria-pressed="false" aria-label="Show API key">Show</button>
+            </div>
+          </div>
+          <div class="form-row form-row-split">
+            <div>
+              <button type="button" class="btn btn-secondary" id="ai-test-btn">Test Server</button>
+              <p class="field-hint" id="ai-test-result"></p>
+            </div>
+            <div>
+              <label for="ai-model">Model</label>
+              <select id="ai-model" name="model" disabled>
+                <option value="">Press Test Server first</option>
+              </select>
+            </div>
+          </div>
+          <p class="form-error" id="mud-setup-error" role="alert" hidden></p>
+          <button type="submit" class="btn btn-primary" id="mud-setup-save" disabled>Save</button>
+        </form>
+        </div>
       </section>
     </main>
 

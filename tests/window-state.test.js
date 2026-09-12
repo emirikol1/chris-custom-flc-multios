@@ -45,6 +45,17 @@ describe('pickBounds', () => {
     });
   });
 
+  it('inherits position and maximized from restored-state defaults when nothing is saved', () => {
+    const inherited = { x: 120, y: 80, width: 900, height: 700, maximized: true };
+    expect(pickBounds(undefined, inherited, [PRIMARY])).toEqual(inherited);
+    // Saved state wins over inherited defaults, including explicit maximized=false.
+    const saved = { x: 10, y: 20, width: 500, height: 400, maximized: false };
+    expect(pickBounds(saved, inherited, [PRIMARY])).toEqual(saved);
+    // Offscreen inherited position is dropped like a saved one would be.
+    const off = { x: 9000, y: 9000, width: 900, height: 700 };
+    expect(pickBounds(undefined, off, [PRIMARY]).x).toBeUndefined();
+  });
+
   it('keeps a fully on-screen saved rect', () => {
     const saved = { x: 100, y: 100, width: 800, height: 600 };
     expect(pickBounds(saved, DEFAULTS, [PRIMARY])).toEqual({ ...saved, maximized: false });

@@ -48,7 +48,18 @@
     aiTestResult: $("#ai-test-result"),
     aiModel: $("#ai-model"),
     mudSave: $("#mud-setup-save"),
+    serverListPanel: $("#server-list-panel"),
+    serverListToggle: $("#server-list-toggle"),
+    serverListSummary: $("#server-list-summary"),
+    mudSetupToggle: $("#mud-setup-toggle"),
+    mudProviderName: $("#mud-provider-name"),
+    mudStatusLight: $("#mud-status-light"),
+    settingsImportBtn: $("#settings-import-btn"),
+    settingsExportBtn: $("#settings-export-btn"),
   };
+
+  /** Collapsed state of the two collapsible panels (persisted in app prefs). */
+  const collapsed = { servers: false, mud: false };
 
   /** @type {Array<{id:string,label:string,group:string,baseUrl:string,keyRequired:boolean,signupUrl:string,hint:string}>} */
   let aiPresets = [];
@@ -232,11 +243,48 @@
     els.label.focus();
   }
 
+  function sortedServers() {
+    return [...servers].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  }
+
+  /** Compact rows (label + session username) shown while the panel is collapsed. */
+  function renderServerCompactList() {
+    const existing = els.serverListPanel.querySelector(".server-compact-list");
+    if (existing) existing.remove();
+    els.serverListSummary.textContent = "";
+    if (!collapsed.servers) return;
+
+    const sorted = sortedServers();
+    els.serverListSummary.textContent = `${sorted.length} server${sorted.length === 1 ? "" : "s"}`;
+    if (sorted.length === 0) return;
+
+    const list = document.createElement("div");
+    list.className = "server-compact-list";
+    list.setAttribute("role", "list");
+    for (const server of sorted) {
+      const row = document.createElement("div");
+      row.className = "server-compact";
+      row.setAttribute("role", "listitem");
+      const user = (server.username || "").trim();
+      row.innerHTML = `
+        <span class="server-compact-label" title="${escapeHtml(server.url)}">${escapeHtml(server.label)}</span>
+        <span class="server-compact-user${user ? "" : " none"}">${escapeHtml(user || "no session user")}</span>
+        <button type="button" class="btn btn-primary btn-sm" data-action="connect">Connect</button>
+      `;
+      row.querySelector('[data-action="connect"]').addEventListener("click", () =>
+        handleConnect(server)
+      );
+      list.appendChild(row);
+    }
+    els.serverListPanel.appendChild(list);
+  }
+
   function renderServerList() {
     els.serverList.innerHTML = "";
-    const sorted = [...servers].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const sorted = sortedServers();
 
     els.serverListEmpty.hidden = sorted.length > 0;
+    renderServerCompactList();
 
     for (const server of sorted) {
       const card = document.createElement("article");
@@ -532,6 +580,100 @@
       ? `Ready · ${aiSettings.model}`
       : "Not set up";
     els.mudNotice.hidden = configured || !els.mudToggle.checked;
+    const preset = aiSettings && aiPresets.find((p) => p.id === aiSettings.preset);
+    els.mudProviderName.textContent = preset ? preset.label : aiSettings?.preset || "";
+    if (!configured) setMudStatusLight("unknown", "AI server: not set up");
+  }
+
+  /**
+   * @param {"ok"|"bad"|"unknown"|"checking"} state
+   * @param {string} title
+   */
+  function setMudStatusLight(state, title) {
+    els.mudStatusLight.className = `status-light ${state}`;
+    els.mudStatusLight.title = title;
+    els.mudStatusLight.setAttribute("aria-label", title);
+  }
+
+  const MUD_PING_INTERVAL_MS = 60_000;
+  let mudPingTimer = null;
+  let mudPingInFlight = false;
+
+  /** Ping the saved AI server (using the saved key) and set the red/green light. */
+  async function pingMudServer() {
+    const api = window.flc?.ai;
+    if (!api || mudPingInFlight) return;
+    if (!isAiConfigured()) {
+      setMudStatusLight("unknown", "AI server: not set up");
+      return;
+    }
+    mudPingInFlight = true;
+    els.mudStatusLight.classList.add("checking");
+    try {
+      const result = await api.testConnection({
+        preset: aiSettings.preset,
+        baseUrl: aiSettings.baseUrl,
+        apiKey: undefined, // use the saved key
+      });
+      if (result && result.ok) {
+        const hasModel = result.models.includes(aiSettings.model);
+        setMudStatusLight(
+          hasModel ? "ok" : "bad",
+          hasModel
+            ? `AI server: connected (${result.models.length} model${result.models.length === 1 ? "" : "s"})`
+            : `AI server: connected, but model "${aiSettings.model}" is not loaded`
+        );
+      } else {
+        setMudStatusLight(
+          "bad",
+          `AI server: ${AI_ERROR_TEXT[result && result.error] || AI_ERROR_TEXT.http_error}`
+        );
+      }
+    } catch {
+      setMudStatusLight("bad", `AI server: ${AI_ERROR_TEXT.http_error}`);
+    } finally {
+      mudPingInFlight = false;
+      els.mudStatusLight.classList.remove("checking");
+    }
+  }
+
+  function startMudPing() {
+    stopMudPing();
+    pingMudServer();
+    mudPingTimer = setInterval(pingMudServer, MUD_PING_INTERVAL_MS);
+  }
+
+  function stopMudPing() {
+    if (mudPingTimer !== null) {
+      clearInterval(mudPingTimer);
+      mudPingTimer = null;
+    }
+  }
+
+  /**
+   * @param {"servers"|"mud"} panel
+   * @param {boolean} isCollapsed
+   * @param {{ persist?: boolean }} [opts]
+   */
+  function setPanelCollapsed(panel, isCollapsed, opts = {}) {
+    collapsed[panel] = Boolean(isCollapsed);
+    const section = panel === "servers" ? els.serverListPanel : els.mudPanel;
+    const toggle = panel === "servers" ? els.serverListToggle : els.mudSetupToggle;
+    section.classList.toggle("collapsed", collapsed[panel]);
+    toggle.setAttribute("aria-expanded", collapsed[panel] ? "false" : "true");
+    if (panel === "servers") {
+      renderServerCompactList();
+    } else {
+      // Expanded header shows "Ready · model"; collapsed shows provider + light only.
+      els.mudState.hidden = collapsed.mud;
+    }
+    if (opts.persist !== false) {
+      const setPrefs = window.flc?.prefs?.set;
+      if (typeof setPrefs === "function") {
+        const key = panel === "servers" ? "serversCollapsed" : "mudCollapsed";
+        setPrefs({ [key]: collapsed[panel] }).catch(() => {});
+      }
+    }
   }
 
   function applyPresetToForm(presetId, opts = {}) {
@@ -697,6 +839,7 @@
         ? "Key saved (leave blank to keep it)"
         : "Paste your key";
       refreshMudSetupState();
+      startMudPing();
       showNotification("Mud AI server saved", "info");
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
@@ -704,11 +847,17 @@
     }
   }
 
-  function showMudPanel(show) {
+  function showMudPanel(show, opts = {}) {
     els.mudPanel.hidden = !show;
     refreshMudSetupState();
     if (show) {
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      startMudPing();
+      if (opts.expand) setPanelCollapsed("mud", false);
+      if (opts.scroll) {
+        els.mudPanel.scrollIntoView({ block: "start", behavior: "smooth" });
+      }
+    } else {
+      stopMudPing();
     }
   }
 
@@ -722,7 +871,8 @@
         showNotification("Could not save Mud preference", "error");
       }
     }
-    showMudPanel(enabled);
+    // Turning Mud on that isn't set up yet: open the panel so the user sees what to do.
+    showMudPanel(enabled, { expand: enabled && !isAiConfigured(), scroll: enabled });
     if (enabled && !isAiConfigured()) {
       showNotification(
         "FLC MUD needs an AI server (LM Studio, Ollama, a free hosted key, or OpenAI). Set it up in Mud Setup.",
@@ -736,6 +886,8 @@
     if (typeof getPrefs !== "function") return;
     try {
       const prefs = await getPrefs();
+      setPanelCollapsed("servers", Boolean(prefs && prefs.serversCollapsed), { persist: false });
+      setPanelCollapsed("mud", Boolean(prefs && prefs.mudCollapsed), { persist: false });
       els.mudToggle.checked = Boolean(prefs && prefs.mudEnabled);
       showMudPanel(els.mudToggle.checked);
     } catch (err) {
@@ -776,9 +928,15 @@
       els.aiKeyToggle.setAttribute("aria-pressed", showing ? "false" : "true");
     });
 
+    els.serverListToggle.addEventListener("click", () =>
+      setPanelCollapsed("servers", !collapsed.servers)
+    );
+    els.mudSetupToggle.addEventListener("click", () => setPanelCollapsed("mud", !collapsed.mud));
+    els.mudStatusLight.addEventListener("click", () => pingMudServer());
+
     if (typeof window.flc?.onOpenMudSetup === "function") {
       window.flc.onOpenMudSetup(() => {
-        showMudPanel(true);
+        showMudPanel(true, { expand: true, scroll: true });
       });
     }
     if (typeof window.flc?.onAutologinStatus === "function") {
@@ -796,8 +954,68 @@
     }
   }
 
+  const IMPORT_ERROR_TEXT = {
+    invalid_json: "That file is not valid JSON.",
+    not_settings_file: "That file is not an FLC settings export.",
+    unsupported_format: "That settings file was made by a newer version of FLC.",
+    read_failed: "Could not read that file.",
+    apply_failed: "Import failed part-way; some settings may have been applied.",
+    write_failed: "Could not write the settings file.",
+  };
+
+  async function handleExportSettings() {
+    const api = window.flc?.settings;
+    if (!api) return;
+    els.settingsExportBtn.disabled = true;
+    try {
+      const result = await api.exportToFile();
+      if (result && result.ok) {
+        showNotification(
+          `Settings exported (${result.servers} server${result.servers === 1 ? "" : "s"}, Mud setup, preferences, window layouts). The file contains your passwords and API key — keep it private.`,
+          "info"
+        );
+      } else if (result && !result.canceled) {
+        showNotification(IMPORT_ERROR_TEXT[result.error] || IMPORT_ERROR_TEXT.write_failed, "error");
+      }
+    } finally {
+      els.settingsExportBtn.disabled = false;
+    }
+  }
+
+  async function handleImportSettings() {
+    const api = window.flc?.settings;
+    if (!api) return;
+    els.settingsImportBtn.disabled = true;
+    try {
+      const result = await api.importFromFile();
+      if (result && result.ok) {
+        const s = result.servers || { added: 0, updated: 0, skipped: 0 };
+        const parts = [];
+        if (result.applied.includes("servers")) {
+          parts.push(`servers: ${s.added} added, ${s.updated} updated${s.skipped ? `, ${s.skipped} skipped` : ""}`);
+        }
+        if (result.applied.includes("aiProvider")) parts.push("Mud setup");
+        if (result.applied.includes("narratorSettings")) parts.push("Mud options");
+        if (result.applied.includes("appPrefs")) parts.push("preferences");
+        if (result.applied.includes("windowState")) parts.push("window layouts");
+        showNotification(`Imported ${parts.join(" · ") || "nothing"}.`, "info");
+        // Refresh everything the import may have touched.
+        await loadServers();
+        setAddMode();
+        await loadAiSetup();
+        await loadPrefs();
+      } else if (result && !result.canceled) {
+        showNotification(IMPORT_ERROR_TEXT[result.error] || IMPORT_ERROR_TEXT.read_failed, "error");
+      }
+    } finally {
+      els.settingsImportBtn.disabled = false;
+    }
+  }
+
   function bindUi() {
     bindMudUi();
+    els.settingsExportBtn.addEventListener("click", handleExportSettings);
+    els.settingsImportBtn.addEventListener("click", handleImportSettings);
     els.serverForm.addEventListener("submit", handleFormSubmit);
     els.getUsersBtn.addEventListener("click", handleGetUsers);
     els.username.addEventListener("change", () => {
