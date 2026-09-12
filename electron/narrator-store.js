@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { stripReasoning } = require('./ai-client');
 
 const SESSION_CAP = 80;
 const PROMPT_FILES = {
@@ -69,7 +70,12 @@ function loadSession(rootDir, channel) {
   }
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    const messages = Array.isArray(parsed.messages) ? parsed.messages : [];
+    const messages = (Array.isArray(parsed.messages) ? parsed.messages : []).map((m) =>
+      // Sessions saved before reasoning stripping may contain <think> blocks.
+      m && m.role === 'assistant' && typeof m.content === 'string'
+        ? { ...m, content: stripReasoning(m.content) }
+        : m,
+    );
     return { version: 1, messages };
   } catch {
     return { version: 1, messages: [] };

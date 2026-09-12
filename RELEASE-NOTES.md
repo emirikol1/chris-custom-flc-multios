@@ -1,6 +1,11 @@
-# v0.2.0
+# v0.2.1
 
 Chris's Custom FLC MultiOS — Foundry VTT join client for Windows, macOS, and Linux.
+
+## Fixes in 0.2.1
+
+- **PopOut! module works.** The game window now identifies as plain Chrome, so PopOut! no longer shows "cannot work within the standalone FVTT Application".
+- **Clean MUD text with thinking models.** `<think>…</think>` reasoning from models like Qwen3 / DeepSeek-R1 is stripped before display, storage, and `SILENCE` detection; previously saved history is cleaned on load.
 
 ## What's new in 0.2.0
 

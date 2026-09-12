@@ -234,14 +234,41 @@ function createAiClient(opts) {
       body.choices[0].message.content
         ? String(body.choices[0].message.content)
         : '';
-    return { content, model: body && body.model ? String(body.model) : model };
+    return {
+      content: stripReasoning(content),
+      model: body && body.model ? String(body.model) : model,
+    };
   }
 
   return { listModels, chat };
 }
 
+/**
+ * Remove chain-of-thought blocks that "thinking" models (Qwen3, DeepSeek-R1,
+ * etc.) embed in the reply text, e.g. `<think>...</think>answer`.
+ * Handles closed blocks, a reply that begins mid-thought and only has the
+ * closing tag, and an unterminated `<think>` (truncated reply).
+ * @param {string} text
+ * @returns {string}
+ */
+function stripReasoning(text) {
+  let out = String(text || '');
+  if (!/<\/?think(?:ing)?>/i.test(out)) return out;
+  // Closed blocks (possibly several).
+  out = out.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '');
+  // Opening tag was dropped by the server: keep only what follows the last close.
+  const lastClose = out.search(/<\/think(?:ing)?>(?![\s\S]*<\/think(?:ing)?>)/i);
+  if (lastClose !== -1) {
+    out = out.slice(lastClose).replace(/^<\/think(?:ing)?>/i, '');
+  }
+  // Unterminated block: reply was cut off while still thinking.
+  out = out.replace(/<think(?:ing)?>[\s\S]*$/i, '');
+  return out.trim();
+}
+
 module.exports = {
   createAiClient,
+  stripReasoning,
   normalizeBaseUrl,
   safeErrorMessage,
   classifyError,

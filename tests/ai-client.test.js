@@ -4,7 +4,47 @@ import {
   createAiClient,
   normalizeBaseUrl,
   safeErrorMessage,
+  stripReasoning,
 } from '../electron/ai-client.js';
+
+describe('stripReasoning', () => {
+  it('leaves plain replies untouched', () => {
+    expect(stripReasoning('{Y}Tony{x} strikes the goblin.')).toBe('{Y}Tony{x} strikes the goblin.');
+  });
+
+  it('removes a closed <think> block', () => {
+    expect(stripReasoning('<think>Need SILENCE. Final only.</think>SILENCE')).toBe('SILENCE');
+  });
+
+  it('removes multiple blocks and surrounding whitespace', () => {
+    expect(stripReasoning('<think>a</think>\n\nLine one\n<think>b</think>\nLine two\n')).toBe(
+      'Line one\n\nLine two',
+    );
+  });
+
+  it('handles a dropped opening tag (reasoning then </think>)', () => {
+    expect(stripReasoning('The hard rules say... probably SILENCE.\n</think>SILENCE')).toBe(
+      'SILENCE',
+    );
+  });
+
+  it('drops an unterminated <think> (truncated reply)', () => {
+    expect(stripReasoning('Answer.\n<think>still going')).toBe('Answer.');
+    expect(stripReasoning('<think>only thought')).toBe('');
+  });
+
+  it('chat() applies it to the returned content', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        model: 'm',
+        choices: [{ message: { role: 'assistant', content: '<think>x</think>Tony swings.' } }],
+      }),
+    );
+    const client = createAiClient({ baseUrl: BASE_URL, apiKey: '', fetchImpl });
+    const res = await client.chat({ model: 'm', messages: [] });
+    expect(res.content).toBe('Tony swings.');
+  });
+});
 
 const SECRET_KEY = 'sk-abc123SUPERSECRET';
 const BASE_URL = 'http://127.0.0.1:1234/v1';

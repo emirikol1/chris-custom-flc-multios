@@ -83,8 +83,8 @@ Then install the file that matches your OS:
 
 | OS | File in `dist/` | Install |
 |----|-----------------|---------|
-| **Linux (.deb)** | `ChrisCustomFLC-MultiOS-0.2.0-linux.deb` | Double-click or `sudo apt install ./dist/ChrisCustomFLC-MultiOS-0.2.0-linux.deb` |
-| **Linux (AppImage)** | `ChrisCustomFLC-MultiOS-0.2.0-linux.AppImage` | Mark executable (`chmod +x`), then run |
+| **Linux (.deb)** | `ChrisCustomFLC-MultiOS-0.2.1-linux.deb` | Double-click or `sudo apt install ./dist/ChrisCustomFLC-MultiOS-0.2.1-linux.deb` |
+| **Linux (AppImage)** | `ChrisCustomFLC-MultiOS-0.2.1-linux.AppImage` | Mark executable (`chmod +x`), then run |
 | **Windows** | `ChrisCustomFLC-MultiOS-*-windows-setup.exe` | Available from [Releases](https://github.com/emirikol1/chris-custom-flc-multios/releases/latest) when built |
 | **macOS** | `ChrisCustomFLC-MultiOS-*-mac.dmg` | Available from [Releases](https://github.com/emirikol1/chris-custom-flc-multios/releases/latest) when built |
 

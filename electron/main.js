@@ -9,6 +9,7 @@ const {
   getNarratorRoot,
 } = require('./paths');
 const { readGpuPrefs } = require('./gpu-prefs');
+const { browserLikeUserAgent } = require('./user-agent');
 
 const gpuPrefsPath = getGpuPrefsPath();
 const gpuPrefsAtStartup = readGpuPrefs(gpuPrefsPath);
@@ -20,6 +21,11 @@ const {
 } = require('./logger');
 
 app.commandLine.appendSwitch('class', 'ChrisCustomFLCMultiOS');
+
+// Present as plain Chrome: Foundry's PopOut! module refuses to open windows
+// when it sees " Electron/" in navigator.userAgent. Applies to every session
+// (game windows, popouts, hidden Get Users window) created after this point.
+app.userAgentFallback = browserLikeUserAgent(app.userAgentFallback, app.name);
 
 if (gpuPrefsAtStartup.preferSoftwareWebgl) {
   app.commandLine.appendSwitch('enable-unsafe-swiftshader');

@@ -80,6 +80,6 @@ jobs:
           find artifacts -type f \( -name '*.deb' -o -name '*.AppImage' -o -name '*.exe' -o -name '*.dmg' \) -print
           mapfile -t FILES < <(find artifacts -type f \( -name '*.deb' -o -name '*.AppImage' -o -name '*.exe' -o -name '*.dmg' \))
           test "${#FILES[@]}" -ge 4
-          gh release view v0.2.0 >/dev/null
-          gh release upload v0.2.0 "${FILES[@]}" --clobber
-          gh release edit v0.2.0 --notes-file RELEASE-NOTES.md
+          gh release view v0.2.1 >/dev/null
+          gh release upload v0.2.1 "${FILES[@]}" --clobber
+          gh release edit v0.2.1 --notes-file RELEASE-NOTES.md
