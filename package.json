@@ -1,6 +1,6 @@
 {
   "name": "chris-custom-flc-multios",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Chris's Custom FLC MultiOS — Chromium join client for Foundry VTT (Windows, macOS, Linux). Inspired by Foundry Lightweight Client (https://github.com/phenomen/flc).",
   "author": "Chris <noreply@invalid>",
@@ -46,20 +46,34 @@
     ],
     "asar": true,
     "compression": "maximum",
-    "electronLanguages": ["en-US"],
+    "electronLanguages": [
+      "en-US"
+    ],
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "category": "Game",
       "icon": "icon.png",
       "executableName": "chris-custom-flc-multios",
       "artifactName": "ChrisCustomFLC-MultiOS-${version}-linux.${ext}"
     },
     "deb": {
-      "depends": ["libgtk-3-0", "libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils"],
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils"
+      ],
       "maintainer": "Chris <noreply@invalid>"
     },
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "icon": "icon.png",
       "executableName": "ChrisCustomFLCMultiOS",
       "artifactName": "ChrisCustomFLC-MultiOS-${version}-windows-setup.${ext}"
@@ -73,7 +87,9 @@
       "artifactName": "ChrisCustomFLC-MultiOS-${version}-windows-setup.${ext}"
     },
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "category": "public.app-category.games",
       "icon": "icon.png",
       "hardenedRuntime": false,
