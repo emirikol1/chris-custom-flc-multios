@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FLC MUD</title>
+    <link rel="stylesheet" href="narrator.css" />
+  </head>
+  <body>
+    <header class="status-bar">
+      <span id="status-text">FLC MUD — waiting for chat</span>
+      <label class="toggle" title="Off by default. Uses Foundry ChatMessage.create / processMessage as you.">
+        <input type="checkbox" id="post-to-foundry" />
+        <span>Post MUD to Foundry chat</span>
+      </label>
+      <label class="speak-as">
+        Speak as
+        <select id="speak-as" title="Foundry still records the message as your user. Alias only works if this client is allowed (usually GM).">
+          <option value="ooc">Me (OOC)</option>
+          <option value="token">Selected token (IC)</option>
+          <option value="alias">Alias (if Foundry allows)</option>
+        </select>
+      </label>
+      <input id="alias-input" type="text" maxlength="80" placeholder="Alias / local byline" />
+      <button type="button" id="setup-btn" class="setup-btn">Setup</button>
+    </header>
+
+    <div class="split">
+      <section class="pane mud-pane" aria-label="MUD play-by-play">
+        <h1>Play-by-play</h1>
+        <div id="mud-log" class="log mud-log" tabindex="0"></div>
+      </section>
+      <div class="splitter" id="splitter" role="separator" aria-orientation="horizontal"></div>
+      <section class="pane discuss-pane" aria-label="Table companion">
+        <h1>Ask about the log</h1>
+        <div id="discuss-log" class="log discuss-log" tabindex="0"></div>
+        <form id="discuss-form" class="discuss-form">
+          <textarea
+            id="discuss-input"
+            rows="3"
+            placeholder="Ask about the Foundry log or the MUD narration…"
+          ></textarea>
+          <button type="submit" class="send-btn">Send</button>
+        </form>
+      </section>
+    </div>
+
+    <script src="narrator.js"></script>
+  </body>
+</html>

@@ -1,6 +1,13 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, net, shell } = require('electron');
 const path = require('path');
-const { getGpuPrefsPath, getServersPath } = require('./paths');
+const {
+  getGpuPrefsPath,
+  getServersPath,
+  getAppPrefsPath,
+  getAiProviderPath,
+  getWindowStatePath,
+  getNarratorRoot,
+} = require('./paths');
 const { readGpuPrefs } = require('./gpu-prefs');
 
 const gpuPrefsPath = getGpuPrefsPath();
@@ -30,10 +37,71 @@ const {
   deleteServer,
   listServers,
 } = require('./store');
-const { registerGameIpc } = require('./game-window');
+const { readAppPrefs, writeAppPrefs } = require('./app-prefs');
+const { fetchJoinPageUsers } = require('./foundry-users');
+const { fetchUsersViaHiddenWindow } = require('./foundry-users-window');
+const {
+  PRESETS,
+  getPreset,
+  readProviderConfig,
+  writeProviderConfig,
+  publicProviderConfig,
+  loadProvider,
+  testConnection,
+} = require('./ai-provider');
+const { createWindowStateStore } = require('./window-state');
+const {
+  registerGameIpc,
+  injectCaptureIntoLiveWindows,
+  runInLiveGameWindows,
+  hasLiveGameWindows,
+  getAutologinContext,
+} = require('./game-window');
+const { createNarratorService } = require('./narrator-service');
+const { mudToAnsi, mudToHtml } = require('./mud-color');
+const {
+  sendNarratorLine,
+  sendNarratorStatus,
+  ensureNarratorWindow,
+  closeNarratorWindow,
+} = require('./narrator-window');
+const {
+  buildCaptureSource,
+  FOUNDRY_POST_SOURCE,
+  describeTokenMove,
+  sanitizeChatLine,
+} = require('./foundry-chat-bridge');
+const { loadScoreboard } = require('./combat-stats');
 
 const serversFilePath = getServersPath();
+const appPrefsPath = getAppPrefsPath();
+const aiProviderPath = getAiProviderPath();
+const narratorRoot = getNarratorRoot();
 const pkg = require('../package.json');
+
+const windowState = createWindowStateStore({ filePath: getWindowStatePath() });
+
+/** @type {import('electron').BrowserWindow | null} */
+let joinWindow = null;
+
+function isMudEnabled() {
+  return readAppPrefs(appPrefsPath).mudEnabled;
+}
+
+/**
+ * Posts using Foundry's own ChatMessage.create / processMessage in the game page.
+ * @param {{ content: string, speakAs: string, alias: string }} payload
+ */
+async function postMudToFoundryChat(payload) {
+  const json = JSON.stringify(payload);
+  await runInLiveGameWindows(`(${FOUNDRY_POST_SOURCE})(${json})`);
+}
+
+const narratorService = createNarratorService({
+  rootDir: narratorRoot,
+  credsLoader: () => loadProvider(aiProviderPath),
+  postToFoundry: postMudToFoundryChat,
+});
 
 process.on('uncaughtException', (err) => {
   logError('uncaughtException', err);
@@ -42,6 +110,12 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason) => {
   logError('unhandledRejection', reason);
 });
+
+function sendToJoinWindow(channel, payload) {
+  if (joinWindow && !joinWindow.isDestroyed()) {
+    joinWindow.webContents.send(channel, payload);
+  }
+}
 
 function registerServerIpc() {
   ipcMain.handle('servers:list', () => {
@@ -66,6 +140,25 @@ function registerServerIpc() {
     return listServers(next);
   });
 
+  ipcMain.handle('servers:get-users', async (_event, url, serverId) => {
+    const started = Date.now();
+    // Fast path: server-rendered join page (older Foundry). Uses Chromium's
+    // network stack so certificate handling matches the game window.
+    let result = await fetchJoinPageUsers(String(url || ''), {
+      fetchImpl: (input, init) => net.fetch(input, init),
+    });
+    if (!result.ok && result.error === 'no_users') {
+      // Foundry V12+ renders the user list client-side: load it in a hidden window.
+      result = await fetchUsersViaHiddenWindow(String(url || ''), {
+        partition: serverId ? `persist:game-${serverId}` : undefined,
+      });
+    }
+    logInfo(
+      `[main] get-users ok=${result.ok ? 1 : 0}${result.ok ? ` count=${result.users.length}` : ` error=${result.error}`} (${Date.now() - started}ms)`,
+    );
+    return result;
+  });
+
   ipcMain.handle('servers:delete', (_event, id) => {
     ensureServersFile(serversFilePath);
     const servers = loadServers(serversFilePath);
@@ -75,21 +168,243 @@ function registerServerIpc() {
   });
 }
 
+function applyMudEnabled(enabled) {
+  if (enabled) {
+    if (hasLiveGameWindows()) {
+      ensureNarratorWindow(windowState);
+      injectCaptureIntoLiveWindows();
+    }
+    const provider = loadProvider(aiProviderPath);
+    if (!provider.ok) {
+      sendNarratorStatus({ text: 'AI server not set up — press Setup' });
+    }
+  } else {
+    closeNarratorWindow();
+  }
+}
+
+function registerPrefsIpc() {
+  ipcMain.handle('prefs:get', () => readAppPrefs(appPrefsPath));
+  ipcMain.handle('prefs:set', (_event, patch) => {
+    const before = readAppPrefs(appPrefsPath);
+    const next = writeAppPrefs(appPrefsPath, patch || {});
+    if (before.mudEnabled !== next.mudEnabled) {
+      logInfo(`[main] mudEnabled=${next.mudEnabled ? 1 : 0}`);
+      applyMudEnabled(next.mudEnabled);
+    }
+    return next;
+  });
+}
+
+function registerAiIpc() {
+  ipcMain.handle('ai:get-presets', () => PRESETS);
+  ipcMain.handle('ai:get-settings', () =>
+    publicProviderConfig(readProviderConfig(aiProviderPath)),
+  );
+  ipcMain.handle('ai:save-settings', (_event, cfg) => {
+    const saved = writeProviderConfig(aiProviderPath, cfg || {});
+    logInfo(`[main] AI provider saved (preset=${saved.preset})`);
+    if (isMudEnabled()) {
+      sendNarratorStatus({ text: 'AI server ready' });
+    }
+    return publicProviderConfig(saved);
+  });
+  ipcMain.handle('ai:test-connection', async (_event, cfg) => {
+    const input = cfg || {};
+    // undefined apiKey means "use the saved one" so the user can test without re-typing it.
+    if (input.apiKey === undefined) {
+      input.apiKey = readProviderConfig(aiProviderPath).apiKey;
+    }
+    const started = Date.now();
+    const result = await testConnection(input);
+    logInfo(
+      `[main] AI test-connection ok=${result.ok ? 1 : 0}${result.ok ? '' : ` error=${result.error}`} (${Date.now() - started}ms)`,
+    );
+    return result;
+  });
+  ipcMain.handle('ai:open-signup', (_event, presetId) => {
+    const preset = getPreset(String(presetId || ''));
+    if (preset && /^https:\/\//.test(preset.signupUrl || '')) {
+      return shell.openExternal(preset.signupUrl);
+    }
+    return undefined;
+  });
+}
+
+function registerNarratorIpc() {
+  ipcMain.handle('narrator:ask', async (_event, text) => {
+    const result = await narratorService.handleUserQuestion(text);
+    if (!result.ok) {
+      sendNarratorStatus({ text: result.message || 'ask failed' });
+      return { ok: false, message: result.message };
+    }
+    return {
+      ok: true,
+      text: result.text,
+      html: mudToHtml(result.text),
+      ansi: mudToAnsi(result.text),
+    };
+  });
+  ipcMain.handle('narrator:get-settings', () => narratorService.getSettings());
+  ipcMain.handle('narrator:set-post-to-foundry', (_event, enabled) =>
+    narratorService.setPostToFoundry(enabled),
+  );
+  ipcMain.handle('narrator:set-settings', (_event, patch) =>
+    narratorService.setSettings(patch),
+  );
+  ipcMain.on('narrator:open-setup', () => {
+    if (joinWindow && !joinWindow.isDestroyed()) {
+      joinWindow.show();
+      joinWindow.focus();
+      sendToJoinWindow('mud:open-setup', {});
+    }
+  });
+
+  ipcMain.on('foundry:autologin-status', (event, status) => {
+    const ctx = getAutologinContext(event.sender) || { username: '', label: '' };
+    const matched = Boolean(status && status.matched);
+    logInfo(`[autologin] matched=${matched ? 1 : 0}${status && status.error ? ` error=${status.error}` : ''}`);
+    sendToJoinWindow('autologin:status', {
+      matched,
+      userCount: status && status.userCount,
+      error: status && status.error,
+      username: ctx.username,
+      label: ctx.label,
+    });
+  });
+
+  let chatQueue = Promise.resolve();
+  /** @type {Array<{ speaker: string, text: string, kind: string }>} */
+  let historyBuffer = [];
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let historyTimer = null;
+  let capturedCount = 0;
+
+  function pushMud(mudText, source) {
+    sendNarratorLine({
+      channel: 'commentary',
+      html: mudToHtml(mudText),
+      ansi: mudToAnsi(mudText),
+      byline: source === 'foundry' ? '' : narratorService.getSettings().localByline,
+      source,
+    });
+  }
+
+  function flushHistoryRecap() {
+    const batch = historyBuffer;
+    historyBuffer = [];
+    historyTimer = null;
+    if (batch.length === 0) {
+      return;
+    }
+    sendNarratorStatus({ text: `rewriting Foundry log in MUD voice · ${batch.length} lines` });
+    chatQueue = chatQueue
+      .then(async () => {
+        const recap = await narratorService.handleHistoryRecap(batch, (mudText) => {
+          pushMud(mudText, 'mud');
+        });
+        if (!recap.ok) {
+          sendNarratorStatus({ text: recap.message || 'AI server error' });
+        } else {
+          sendNarratorStatus({ text: `watching chat · ${capturedCount} loaded` });
+        }
+      })
+      .catch(() => {
+        sendNarratorStatus({ text: 'AI server error' });
+      });
+  }
+
+  ipcMain.on('foundry:capture-status', (_event, payload) => {
+    if (!isMudEnabled()) return;
+    const hooked = Boolean(payload && payload.hooked);
+    const historical = Number(payload && payload.historical) || 0;
+    logInfo(`[narrator] capture hooked=${hooked ? 1 : 0} historical=${historical}`);
+    sendNarratorStatus({
+      text: hooked
+        ? `watching chat · ${historical} loaded from Foundry`
+        : 'chat hook not ready',
+    });
+  });
+
+  ipcMain.on('foundry:token-move', (_event, payload) => {
+    if (!isMudEnabled()) return;
+    const mud = describeTokenMove(payload || {});
+    if (!mud) {
+      return;
+    }
+    pushMud(mud, 'move');
+  });
+
+  ipcMain.on('foundry:chat-line', (_event, payload) => {
+    if (!isMudEnabled()) return;
+    chatQueue = chatQueue
+      .then(async () => {
+        const sanitized = sanitizeChatLine(payload);
+        if (!sanitized) {
+          return;
+        }
+        capturedCount += 1;
+        sendNarratorStatus({
+          text: payload && payload.historical
+            ? `rewriting Foundry log in MUD voice · ${capturedCount} loaded`
+            : `watching chat · last ${sanitized.kind} · ${capturedCount} lines`,
+        });
+
+        if (payload && payload.historical) {
+          historyBuffer.push({
+            speaker: sanitized.speaker,
+            text: sanitized.text,
+            kind: sanitized.kind,
+            id: payload && payload.id,
+            timestamp: payload && payload.timestamp,
+          });
+          if (historyTimer) {
+            clearTimeout(historyTimer);
+          }
+          historyTimer = setTimeout(flushHistoryRecap, 800);
+          return;
+        }
+
+        const result = await narratorService.handleFoundryLine(payload);
+        if (result.ok && result.mudText) {
+          pushMud(result.mudText, 'mud');
+        } else if (!result.ok) {
+          sendNarratorStatus({ text: result.message || 'AI server error' });
+        }
+      })
+      .catch(() => {
+        sendNarratorStatus({ text: 'chat capture error' });
+      });
+  });
+}
+
 function createWindow() {
+  const bounds = windowState.restore('join', { width: 900, height: 600 });
   const win = new BrowserWindow({
-    width: 900,
-    height: 600,
+    width: bounds.width,
+    height: bounds.height,
+    x: bounds.x,
+    y: bounds.y,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      spellcheck: false,
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+  if (bounds.maximized) {
+    win.maximize();
+  }
+  windowState.track(win, 'join');
+  joinWindow = win;
 
   logInfo('Join-list window opened');
 
   win.on('closed', () => {
     logInfo('Join-list window closed');
+    if (joinWindow === win) {
+      joinWindow = null;
+    }
   });
 
   win.loadFile(path.join(__dirname, '..', 'src', 'index.html'));
@@ -97,13 +412,33 @@ function createWindow() {
 
 registerServerIpc();
 registerRendererLogIpc(ipcMain);
-registerGameIpc(gpuPrefsPath);
+registerPrefsIpc();
+registerAiIpc();
+registerGameIpc(gpuPrefsPath, {
+  windowState,
+  isMudEnabled,
+  buildCaptureScript: () => buildCaptureSource(loadScoreboard(narratorRoot)),
+  onGameWindowOpened: () => {
+    if (isMudEnabled()) {
+      const mudWin = ensureNarratorWindow(windowState);
+      if (!loadProvider(aiProviderPath).ok && mudWin) {
+        const notify = () => sendNarratorStatus({ text: 'AI server not set up — press Setup' });
+        if (mudWin.webContents.isLoading()) {
+          mudWin.webContents.once('did-finish-load', notify);
+        } else {
+          notify();
+        }
+      }
+    }
+  },
+});
+registerNarratorIpc();
 
 app.whenReady().then(() => {
   ensureServersFile(serversFilePath);
   const gpuMode = gpuPrefsAtStartup.preferSoftwareWebgl ? 'software' : 'hardware';
   const version = pkg.version || 'unknown';
-  logInfo(`Starting ${pkg.name} v${version} (GPU mode: ${gpuMode})`);
+  logInfo(`Starting ${pkg.name} v${version} (GPU mode: ${gpuMode}, mud: ${isMudEnabled() ? 'on' : 'off'})`);
 
   createWindow();
 

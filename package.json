@@ -2,9 +2,16 @@
   "name": "chris-custom-flc-multios",
   "version": "0.1.0",
   "private": true,
-  "description": "Chris's Custom FLC MultiOS — Chromium join client for Foundry VTT (Windows, macOS, Linux)",
+  "description": "Chris's Custom FLC MultiOS — Chromium join client for Foundry VTT (Windows, macOS, Linux). Inspired by Foundry Lightweight Client (https://github.com/phenomen/flc).",
   "author": "Chris <noreply@invalid>",
-  "homepage": "https://github.com/chris-custom-flc-multios/chris-custom-flc-multios",
+  "homepage": "https://github.com/emirikol1/chris-custom-flc-multios",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/emirikol1/chris-custom-flc-multios.git"
+  },
+  "bugs": {
+    "url": "https://github.com/emirikol1/chris-custom-flc-multios/issues"
+  },
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
@@ -38,6 +45,8 @@
       "package.json"
     ],
     "asar": true,
+    "compression": "maximum",
+    "electronLanguages": ["en-US"],
     "linux": {
       "target": ["AppImage", "deb"],
       "category": "Game",

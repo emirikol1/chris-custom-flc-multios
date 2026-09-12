@@ -68,6 +68,19 @@ describe('server list operations', () => {
     expect(next[0].label).toBe('New');
   });
 
+  it('addServer defaults autoJoin to true and honours an explicit false', () => {
+    const on = addServer([], { label: 'A', url: 'a.example' });
+    expect(on[0].autoJoin).toBe(true);
+    const off = addServer([], { label: 'B', url: 'b.example', autoJoin: false });
+    expect(off[0].autoJoin).toBe(false);
+  });
+
+  it('updateServer toggles autoJoin', () => {
+    const servers = [{ id: 'x', label: 'Old', url: 'https://old.example', notes: '', order: 0, autoJoin: true }];
+    expect(updateServer(servers, 'x', { autoJoin: false })[0].autoJoin).toBe(false);
+    expect(updateServer(servers, 'x', { label: 'N' })[0].autoJoin).toBe(true);
+  });
+
   it('updateServer patches fields and normalizes url', () => {
     const servers = [{ id: 'x', label: 'Old', url: 'https://old.example', notes: '', order: 0 }];
     const next = updateServer(servers, 'x', { label: 'New', url: 'new.example' });

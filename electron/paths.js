@@ -29,6 +29,22 @@ function getGpuPrefsPath() {
   return path.join(getDataDir(), 'gpu-prefs.json');
 }
 
+function getAppPrefsPath() {
+  return path.join(getDataDir(), 'app-prefs.json');
+}
+
+function getAiProviderPath() {
+  return path.join(getDataDir(), 'ai-provider.json');
+}
+
+function getWindowStatePath() {
+  return path.join(getDataDir(), 'window-state.json');
+}
+
+function getNarratorRoot() {
+  return path.join(getDataDir(), 'narrator');
+}
+
 module.exports = {
   PROJECT_ROOT,
   isPackaged,
@@ -36,4 +52,8 @@ module.exports = {
   getLogsDir,
   getServersPath,
   getGpuPrefsPath,
+  getAppPrefsPath,
+  getAiProviderPath,
+  getWindowStatePath,
+  getNarratorRoot,
 };

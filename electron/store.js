@@ -95,6 +95,7 @@ function addServer(servers, data) {
   if (data.password !== undefined && data.password !== '') {
     entry.password = data.password;
   }
+  entry.autoJoin = data.autoJoin === undefined ? true : Boolean(data.autoJoin);
   return [...servers, entry];
 }
 
@@ -113,6 +114,15 @@ function updateServer(servers, id, patch) {
   const updated = { ...current, ...patch, id: current.id };
   if (patch.url !== undefined) {
     updated.url = normalizeUrl(patch.url);
+  }
+  if (patch.autoJoin !== undefined) {
+    updated.autoJoin = Boolean(patch.autoJoin);
+  }
+  if (patch.username === undefined && 'username' in patch) {
+    delete updated.username;
+  }
+  if (patch.password === undefined && 'password' in patch) {
+    delete updated.password;
   }
   const next = servers.slice();
   next[index] = updated;

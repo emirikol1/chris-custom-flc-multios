@@ -2,6 +2,16 @@ node_modules/
 data/
 logs/
 
+# Per-machine runtime state (all under data/, listed explicitly so they are
+# never committed even if data/ is un-ignored later). ai-provider.json holds
+# the user's AI API key and must never ship.
+data/ai-provider.json
+data/app-prefs.json
+data/window-state.json
+data/narrator/sessions/
+data/narrator/settings.json
+data/narrator/scoreboard.json
+
 # Unpacked electron-builder trees (not installers)
 dist/linux-unpacked/
 dist/win-unpacked/

@@ -5,7 +5,14 @@ const fs = require("fs");
 const path = require("path");
 
 const repo = path.resolve(__dirname, "..");
-const needles = ["Chris-Custom-FLC/data", "com.phenomen.flc"];
+const needles = [
+  "Chris-Custom-FLC/data",
+  "com.phenomen.flc",
+  // Linux-only credential locations from the original project must never ship.
+  "/media/veracrypt1",
+  "hermes-managed",
+  "HERMES_MANAGED_DIR",
+];
 
 function fail(msg) {
   console.error(`pre-dist: ${msg}`);
@@ -28,6 +35,10 @@ if (path.basename(repo) === "Chris-Custom-FLC") {
 
 if (fs.existsSync(path.join(repo, "data", "servers.json"))) {
   fail("data/servers.json exists — remove it before packaging");
+}
+
+if (fs.existsSync(path.join(repo, "data", "ai-provider.json"))) {
+  fail("data/ai-provider.json exists (holds an API key) — remove it before packaging");
 }
 
 const logsDir = path.join(repo, "logs");

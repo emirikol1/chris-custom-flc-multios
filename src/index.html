@@ -13,6 +13,10 @@
         <span class="version-badge" id="app-version">v0.1.0</span>
       </div>
       <div class="header-toolbar" role="toolbar" aria-label="Connection options">
+        <label class="toolbar-toggle" title="Show the FLC MUD play-by-play window while in a game">
+          <input type="checkbox" id="mud-toggle" />
+          <span>Mud</span>
+        </label>
         <label class="toolbar-toggle" title="Connect in a private session">
           <input type="checkbox" id="incognito-toggle" />
           <span>Incognito</span>
@@ -30,6 +34,51 @@
     </header>
 
     <main class="app-main">
+      <section class="panel mud-setup-panel" id="mud-setup-panel" aria-labelledby="mud-setup-heading" hidden>
+        <div class="panel-header">
+          <h2 id="mud-setup-heading">Mud Setup</h2>
+          <span class="mud-setup-state" id="mud-setup-state">Not set up</span>
+        </div>
+        <p class="mud-setup-notice" id="mud-setup-notice" role="status" hidden>
+          FLC MUD needs an AI server: a free local one (LM Studio or Ollama with a model loaded),
+          a free hosted key (Groq, Cerebras, Gemini, OpenRouter, Mistral), or OpenAI.
+          Pick one below, press <strong>Test Server</strong>, choose a model, then <strong>Save</strong>.
+        </p>
+        <form id="mud-setup-form" class="server-form" novalidate>
+          <div class="form-row">
+            <label for="ai-preset">Provider</label>
+            <select id="ai-preset" name="preset"></select>
+            <p class="field-hint" id="ai-preset-hint"></p>
+            <a class="field-link" id="ai-signup-link" href="#" hidden>Get a free key</a>
+          </div>
+          <div class="form-row">
+            <label for="ai-base-url">Server URL</label>
+            <input type="text" id="ai-base-url" name="baseUrl" autocomplete="off" placeholder="https://host/v1" />
+          </div>
+          <div class="form-row" id="ai-key-row">
+            <label for="ai-api-key">API key</label>
+            <div class="password-field">
+              <input type="password" id="ai-api-key" name="apiKey" autocomplete="off" placeholder="Paste your key" />
+              <button type="button" class="btn btn-ghost btn-sm" id="ai-key-toggle-btn" aria-pressed="false" aria-label="Show API key">Show</button>
+            </div>
+          </div>
+          <div class="form-row form-row-split">
+            <div>
+              <button type="button" class="btn btn-secondary" id="ai-test-btn">Test Server</button>
+              <p class="field-hint" id="ai-test-result"></p>
+            </div>
+            <div>
+              <label for="ai-model">Model</label>
+              <select id="ai-model" name="model" disabled>
+                <option value="">Press Test Server first</option>
+              </select>
+            </div>
+          </div>
+          <p class="form-error" id="mud-setup-error" role="alert" hidden></p>
+          <button type="submit" class="btn btn-primary" id="mud-setup-save" disabled>Save</button>
+        </form>
+      </section>
+
       <section class="panel server-form-panel" aria-labelledby="server-form-heading">
         <div class="panel-header">
           <h2 id="server-form-heading">Add Server</h2>
@@ -73,13 +122,21 @@
           <div class="form-row form-row-split">
             <div>
               <label for="server-username">Username <span class="optional">(optional)</span></label>
+              <div class="password-field">
+                <select id="server-username" name="username">
+                  <option value="">— none —</option>
+                </select>
+                <button type="button" class="btn btn-secondary btn-sm" id="get-users-btn" title="Fetch the user list from this server's join page">Get Users</button>
+              </div>
               <input
                 type="text"
-                id="server-username"
-                name="username"
+                id="server-username-manual"
+                name="usernameManual"
                 autocomplete="off"
-                placeholder="Foundry username"
+                placeholder="Type the Foundry username"
+                hidden
               />
+              <p class="field-hint" id="get-users-result"></p>
             </div>
             <div>
               <label for="server-password">Password <span class="optional">(optional)</span></label>
@@ -103,10 +160,17 @@
               </div>
             </div>
           </div>
+          <div class="form-row">
+            <label class="toolbar-toggle inline-toggle" title="Pick the stored user, fill the password if one is saved, and press Join for you">
+              <input type="checkbox" id="server-autojoin" name="autoJoin" checked />
+              <span>Login automatically</span>
+            </label>
+          </div>
           <p class="form-error" id="form-error" role="alert" hidden></p>
           <button type="submit" class="btn btn-primary" id="server-form-submit">Add Server</button>
         </form>
       </section>
+
 
       <section class="panel server-list-panel" aria-labelledby="server-list-heading">
         <h2 id="server-list-heading">Your servers</h2>

@@ -1,10 +1,35 @@
+const path = require('path');
 const { BrowserWindow, session, app, ipcMain } = require('electron');
 const { readGpuPrefs, writeGpuPrefs } = require('./gpu-prefs');
 const { redactForLog } = require('./log-redact');
 const { logInfo, logWarn, logError } = require('./logger');
+const { buildAutologinScript, isJoinPageUrl } = require('./foundry-autologin');
 
 /** @type {Map<string, import('electron').BrowserWindow>} */
 const gameWindowsById = new Map();
+/** @type {Set<import('electron').BrowserWindow>} */
+const liveGameWindows = new Set();
+/** @type {WeakMap<import('electron').WebContents, { username: string, label: string }>} */
+const autologinContextByWebContents = new WeakMap();
+
+/**
+ * Integration points supplied by main.js so this module stays free of
+ * narrator/window-state wiring details.
+ * @type {{
+ *   windowState: { restore: Function, track: Function } | null,
+ *   isMudEnabled: () => boolean,
+ *   buildCaptureScript: (() => string) | null,
+ *   onGameWindowOpened: ((win: import('electron').BrowserWindow) => void) | null,
+ * }}
+ */
+const deps = {
+  windowState: null,
+  isMudEnabled: () => false,
+  buildCaptureScript: null,
+  onGameWindowOpened: null,
+};
+
+const GAME_PRELOAD = path.join(__dirname, 'preload-game.js');
 
 // Heuristic probe: validates WebGL context creation, not render output (e.g. black canvas).
 const WEBGL_PROBE_SCRIPT = `(function() {
@@ -98,12 +123,114 @@ function handleProbeFailure(gameWin, reason, gpuPrefsPath) {
 }
 
 /**
- * @param {{ id?: string, url: string, label?: string, incognito?: boolean }} payload
+ * Inject the Foundry chat capture into one game window (Mud feature).
+ * @param {import('electron').BrowserWindow} win
+ */
+async function injectCapture(win) {
+  if (!deps.isMudEnabled() || typeof deps.buildCaptureScript !== 'function') {
+    return;
+  }
+  if (!win || win.isDestroyed()) {
+    return;
+  }
+  try {
+    await win.webContents.executeJavaScript(deps.buildCaptureScript());
+    logInfo('[game-window] foundry capture injected');
+  } catch {
+    logWarn('[game-window] foundry capture inject failed');
+  }
+}
+
+/** Called when the Mud toggle is switched on while games are open. */
+function injectCaptureIntoLiveWindows() {
+  for (const win of liveGameWindows) {
+    injectCapture(win);
+  }
+}
+
+/**
+ * @param {import('electron').BrowserWindow} win
+ * @param {{ username?: string, password?: string, autoJoin?: boolean }} creds
+ */
+async function maybeAutologin(win, creds) {
+  // Password is optional: Foundry users may have no password set.
+  if (!creds || creds.autoJoin === false || !creds.username) {
+    return;
+  }
+  if (win.isDestroyed()) {
+    return;
+  }
+  let currentUrl = '';
+  try {
+    currentUrl = win.webContents.getURL();
+  } catch {
+    return;
+  }
+  if (!isJoinPageUrl(currentUrl)) {
+    return;
+  }
+  try {
+    await win.webContents.executeJavaScript(
+      buildAutologinScript({ username: creds.username, password: creds.password }),
+    );
+    logInfo('[game-window] autologin armed');
+  } catch {
+    logWarn('[game-window] autologin inject failed');
+  }
+}
+
+/**
+ * @param {import('electron').BrowserWindow} parent
+ * @param {import('electron').Session} gameSession
+ */
+function enablePopouts(parent, gameSession) {
+  parent.webContents.setWindowOpenHandler(() => ({
+    action: 'allow',
+    overrideBrowserWindowOptions: {
+      autoHideMenuBar: true,
+      webPreferences: {
+        session: gameSession,
+        contextIsolation: true,
+        nodeIntegration: false,
+        spellcheck: false,
+        preload: GAME_PRELOAD,
+      },
+    },
+  }));
+
+  parent.webContents.on('did-create-window', (child) => {
+    logInfo('[game-window] popout opened');
+    if (deps.windowState) {
+      const bounds = deps.windowState.restore('popout', {
+        width: child.getBounds().width,
+        height: child.getBounds().height,
+      });
+      if (bounds.width && bounds.height) {
+        child.setSize(bounds.width, bounds.height);
+      }
+      if (Number.isFinite(bounds.x) && Number.isFinite(bounds.y)) {
+        child.setPosition(bounds.x, bounds.y);
+      }
+      deps.windowState.track(child, 'popout');
+    }
+    child.on('closed', () => {
+      logInfo('[game-window] popout closed');
+    });
+  });
+}
+
+/**
+ * @param {{ id?: string, url: string, label?: string, incognito?: boolean, autoJoin?: boolean, username?: string, password?: string }} payload
  * @param {string} gpuPrefsPath
  * @returns {Promise<void>}
  */
 function openGameWindow(payload, gpuPrefsPath) {
   const { id, url, label, incognito } = payload;
+  const creds = {
+    autoJoin: payload.autoJoin !== false,
+    username: payload.username,
+    password: payload.password,
+  };
 
   if (id && gameWindowsById.has(id)) {
     const existing = gameWindowsById.get(id);
@@ -127,24 +254,44 @@ function openGameWindow(payload, gpuPrefsPath) {
   const partition = incognito
     ? `incog-${Date.now()}-${Math.random().toString(36).slice(2)}`
     : `persist:game-${id}`;
+  const gameSession = session.fromPartition(partition);
+
+  const defaults = { width: 1280, height: 800 };
+  const bounds = deps.windowState ? deps.windowState.restore('game', defaults) : defaults;
 
   const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: bounds.width,
+    height: bounds.height,
+    x: bounds.x,
+    y: bounds.y,
     resizable: true,
     title: sanitizeTitle(label),
     webPreferences: {
-      session: session.fromPartition(partition),
+      session: gameSession,
       contextIsolation: true,
       nodeIntegration: false,
+      spellcheck: false,
+      preload: GAME_PRELOAD,
     },
   });
+  if (bounds.maximized) {
+    win.maximize();
+  }
+  if (deps.windowState) {
+    deps.windowState.track(win, 'game');
+  }
 
   const windowTitle = sanitizeTitle(label);
   logInfo(`Game window opened: "${windowTitle}" (id=${id || 'anonymous'})`);
+  liveGameWindows.add(win);
+  autologinContextByWebContents.set(win.webContents, {
+    username: String(creds.username || ''),
+    label: windowTitle,
+  });
 
   win.on('closed', () => {
     logInfo(`Game window closed: "${windowTitle}" (id=${id || 'anonymous'})`);
+    liveGameWindows.delete(win);
     if (id && gameWindowsById.get(id) === win) {
       gameWindowsById.delete(id);
     }
@@ -152,6 +299,12 @@ function openGameWindow(payload, gpuPrefsPath) {
 
   if (id) {
     gameWindowsById.set(id, win);
+  }
+
+  enablePopouts(win, gameSession);
+
+  if (typeof deps.onGameWindowOpened === 'function') {
+    deps.onGameWindowOpened(win);
   }
 
   const prefsAtOpen = readGpuPrefs(gpuPrefsPath);
@@ -167,6 +320,18 @@ function openGameWindow(payload, gpuPrefsPath) {
 
     if (result && result.ok === false && !prefsAtOpen.preferSoftwareWebgl) {
       handleProbeFailure(win, result.reason, gpuPrefsPath);
+      return;
+    }
+
+    await maybeAutologin(win, creds);
+    await injectCapture(win);
+  });
+  win.webContents.on('did-navigate-in-page', () => {
+    injectCapture(win);
+  });
+  win.webContents.on('did-frame-finish-load', (_event, isMainFrame) => {
+    if (isMainFrame) {
+      injectCapture(win);
     }
   });
 
@@ -175,9 +340,46 @@ function openGameWindow(payload, gpuPrefsPath) {
 }
 
 /**
- * @param {string} gpuPrefsPath
+ * Runs a script in every live game window (used by the Mud "post to Foundry" option).
+ * @param {string} source JS source to execute
  */
-function registerGameIpc(gpuPrefsPath) {
+async function runInLiveGameWindows(source) {
+  for (const win of liveGameWindows) {
+    if (!win || win.isDestroyed()) {
+      continue;
+    }
+    try {
+      await win.webContents.executeJavaScript(source);
+    } catch {
+      logWarn('[game-window] script run in game window failed');
+    }
+  }
+}
+
+/**
+ * @param {import('electron').WebContents} webContents
+ * @returns {{ username: string, label: string } | undefined}
+ */
+function getAutologinContext(webContents) {
+  return autologinContextByWebContents.get(webContents);
+}
+
+function hasLiveGameWindows() {
+  for (const win of liveGameWindows) {
+    if (win && !win.isDestroyed()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * @param {string} gpuPrefsPath
+ * @param {Partial<typeof deps>} [integration]
+ */
+function registerGameIpc(gpuPrefsPath, integration) {
+  Object.assign(deps, integration || {});
+
   ipcMain.handle('game:connect', (_event, payload) => openGameWindow(payload, gpuPrefsPath));
 
   ipcMain.handle('game:get-webgl-status', () => {
@@ -205,4 +407,8 @@ function registerGameIpc(gpuPrefsPath) {
 module.exports = {
   openGameWindow,
   registerGameIpc,
+  injectCaptureIntoLiveWindows,
+  runInLiveGameWindows,
+  hasLiveGameWindows,
+  getAutologinContext,
 };
