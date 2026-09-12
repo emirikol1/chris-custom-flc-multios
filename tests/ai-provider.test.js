@@ -114,7 +114,7 @@ describe('readProviderConfig / writeProviderConfig', () => {
     });
     expect(readProviderConfig(filePath)).toEqual(written);
     const mode = fs.statSync(filePath).mode & 0o777;
-    expect(mode).toBe(0o600);
+    if (process.platform !== 'win32') expect(mode).toBe(0o600); // no POSIX modes on Windows
     // Stored file is valid JSON.
     expect(() => JSON.parse(fs.readFileSync(filePath, 'utf8'))).not.toThrow();
   });
@@ -124,7 +124,7 @@ describe('readProviderConfig / writeProviderConfig', () => {
     writeProviderConfig(filePath, { preset: 'ollama', model: 'a' });
     fs.chmodSync(filePath, 0o644);
     writeProviderConfig(filePath, { preset: 'ollama', model: 'b' });
-    expect(fs.statSync(filePath).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') expect(fs.statSync(filePath).mode & 0o777).toBe(0o600);
   });
 
   it('preserves the stored apiKey when cfg.apiKey is undefined', () => {

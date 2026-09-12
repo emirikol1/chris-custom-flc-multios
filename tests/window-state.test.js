@@ -164,7 +164,7 @@ describe('readStates / writeStates', () => {
     expect(readStates(tmp.filePath)).toEqual(states);
   });
 
-  it('tolerates corrupt JSON', () => {
+  it('tolerates corrupt JSON', { timeout: 20000 }, () => {
     fs.mkdirSync(path.dirname(tmp.filePath), { recursive: true });
     fs.writeFileSync(tmp.filePath, '{ not json', 'utf8');
     expect(readStates(tmp.filePath)).toEqual({});

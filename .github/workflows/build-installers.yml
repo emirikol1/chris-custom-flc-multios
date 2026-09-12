@@ -23,6 +23,8 @@ jobs:
           node-version: "22"
       - run: npm ci
       - run: npm test
+      # The test run writes logs/*.log on the runner; pre-dist refuses to package with them present.
+      - run: node -e "require('fs').rmSync('logs',{recursive:true,force:true})"
       - run: npm run dist:linux
       - uses: actions/upload-artifact@v4
         with:
@@ -41,6 +43,7 @@ jobs:
           node-version: "22"
       - run: npm ci
       - run: npm test
+      - run: node -e "require('fs').rmSync('logs',{recursive:true,force:true})"
       - run: npm run dist:win
       - uses: actions/upload-artifact@v4
         with:
@@ -57,6 +60,7 @@ jobs:
           node-version: "22"
       - run: npm ci
       - run: npm test
+      - run: node -e "require('fs').rmSync('logs',{recursive:true,force:true})"
       - run: npm run dist:mac
       - uses: actions/upload-artifact@v4
         with:
