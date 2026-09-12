@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Server configuration</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="dialog-body">
+    <main class="app-main dialog-main">
+      <section class="panel server-form-panel" aria-labelledby="server-form-heading">
+        <div class="panel-header">
+          <h2 id="server-form-heading">Add Server</h2>
+        </div>
+        <form id="server-form" class="server-form" novalidate>
+          <input type="hidden" id="server-edit-id" value="" />
+          <div class="form-row">
+            <label for="server-label">Label <span class="required">*</span></label>
+            <input type="text" id="server-label" name="label" autocomplete="off" placeholder="Server name" required />
+          </div>
+          <div class="form-row">
+            <label for="server-url">URL <span class="required">*</span></label>
+            <input type="text" id="server-url" name="url" autocomplete="off" placeholder="https://example.com or hostname" required />
+          </div>
+          <div class="form-row">
+            <label for="server-notes">Notes <span class="optional">(optional)</span></label>
+            <textarea id="server-notes" name="notes" rows="3" placeholder="Notes, reminders, etc."></textarea>
+          </div>
+          <div class="form-row form-row-split">
+            <div>
+              <label for="server-username">Username <span class="optional">(optional)</span></label>
+              <div class="password-field">
+                <select id="server-username" name="username">
+                  <option value="">— none —</option>
+                </select>
+                <button type="button" class="btn btn-secondary btn-sm" id="get-users-btn" title="Fetch the user list from this server's join page">Get Users</button>
+              </div>
+              <input type="text" id="server-username-manual" name="usernameManual" autocomplete="off" placeholder="Type the Foundry username" hidden />
+              <p class="field-hint" id="get-users-result"></p>
+            </div>
+            <div>
+              <label for="server-password">Password <span class="optional">(optional)</span></label>
+              <div class="password-field">
+                <input type="password" id="server-password" name="password" autocomplete="off" placeholder="Foundry password" />
+                <button type="button" class="btn btn-ghost btn-sm" id="password-toggle-btn" aria-pressed="false" aria-label="Show password">Show</button>
+              </div>
+            </div>
+          </div>
+          <div class="form-row">
+            <label class="toolbar-toggle inline-toggle" title="Pick the stored user, fill the password if one is saved, and press Join for you">
+              <input type="checkbox" id="server-autojoin" name="autoJoin" checked />
+              <span>Login automatically</span>
+            </label>
+          </div>
+          <p class="form-error" id="form-error" role="alert" hidden></p>
+          <div class="dialog-actions">
+            <button type="button" class="btn btn-secondary" id="form-cancel-btn">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="server-form-submit">Add Server</button>
+          </div>
+        </form>
+      </section>
+    </main>
+    <div id="notifications" class="notifications" aria-live="polite" aria-relevant="additions"></div>
+    <script src="renderer-log.js"></script>
+    <script src="server-config.js"></script>
+  </body>
+</html>

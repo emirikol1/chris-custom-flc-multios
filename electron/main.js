@@ -64,6 +64,11 @@ const {
 const { buildExport, parseImport, mergeServers } = require('./settings-transfer');
 const { loadSettings: loadNarratorSettings } = require('./narrator-store');
 const {
+  openServerConfigWindow,
+  getServerConfigContext,
+  closeServerConfigWindow,
+} = require('./server-config-window');
+const {
   registerGameIpc,
   injectCaptureIntoLiveWindows,
   runInLiveGameWindows,
@@ -142,6 +147,7 @@ function registerServerIpc() {
     const servers = loadServers(serversFilePath);
     const next = addServer(servers, data);
     saveServers(serversFilePath, next);
+    sendToJoinWindow('servers:changed', {});
     return listServers(next);
   });
 
@@ -150,6 +156,7 @@ function registerServerIpc() {
     const servers = loadServers(serversFilePath);
     const next = updateServer(servers, id, patch);
     saveServers(serversFilePath, next);
+    sendToJoinWindow('servers:changed', {});
     return listServers(next);
   });
 
@@ -177,8 +184,25 @@ function registerServerIpc() {
     const servers = loadServers(serversFilePath);
     const next = deleteServer(servers, id);
     saveServers(serversFilePath, next);
+    sendToJoinWindow('servers:changed', {});
     return listServers(next);
   });
+}
+
+function registerServerConfigIpc() {
+  ipcMain.handle('server-config:open', (_event, mode, id) => {
+    const m = mode === 'edit' || mode === 'clone' ? mode : 'add';
+    let server = null;
+    if (m !== 'add') {
+      ensureServersFile(serversFilePath);
+      server = loadServers(serversFilePath).find((s) => s.id === String(id)) || null;
+      if (!server) return { ok: false, error: 'not_found' };
+    }
+    openServerConfigWindow({ mode: m, server }, { windowState, parent: joinWindow });
+    return { ok: true };
+  });
+  ipcMain.handle('server-config:get-context', () => getServerConfigContext());
+  ipcMain.on('server-config:close', () => closeServerConfigWindow());
 }
 
 function applyMudEnabled(enabled) {
@@ -529,13 +553,14 @@ registerRendererLogIpc(ipcMain);
 registerPrefsIpc();
 registerAiIpc();
 registerSettingsTransferIpc();
+registerServerConfigIpc();
 registerGameIpc(gpuPrefsPath, {
   windowState,
   isMudEnabled,
   buildCaptureScript: () => buildCaptureSource(loadScoreboard(narratorRoot)),
-  onGameWindowOpened: () => {
+  onGameWindowOpened: (_win, info) => {
     if (isMudEnabled()) {
-      const mudWin = ensureNarratorWindow(windowState);
+      const mudWin = ensureNarratorWindow(windowState, info && info.layoutKey);
       if (!loadProvider(aiProviderPath).ok && mudWin) {
         const notify = () => sendNarratorStatus({ text: 'AI server not set up — press Setup' });
         if (mudWin.webContents.isLoading()) {

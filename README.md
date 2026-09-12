@@ -10,7 +10,7 @@ Each install starts with an **empty server list** — no servers are bundled or 
 
 ### Server list & connection
 
-- Add, edit, and delete saved Foundry servers (label, URL, optional notes)
+- **Add Server** opens a separate server-configuration window (label, URL, notes, user, password, auto-login); **Edit**, **Clone** (pre-filled copy), and **Delete** per server keep the main panel uncluttered
 - One-click **Connect** opens a dedicated game window per server
 - **Get Users** fetches the user list from the server's join page so you pick your Foundry user from a dropdown (or type a name)
 - **Login automatically** (on by default per server): selects your user on the Foundry join screen, fills the password if one is saved, and presses Join. Password is optional — users without one log straight in
@@ -18,6 +18,8 @@ Each install starts with an **empty server list** — no servers are bundled or 
 - Re-opening a server focuses the existing game window instead of spawning duplicates
 - **Popout windows** work: Foundry popouts (`window.open`, PopOut! module) open as real child windows sharing the game session
 - **Your servers** panel collapses to a compact list (server + session username + Connect)
+- **Screen state per session:** when you leave a server (close, disconnect, reload, or quit) the app records which Foundry windows and PopOut! popouts were open, with their size and position; the next time you connect to that server it reopens them and closes anything that wasn't part of the layout. Windows whose document no longer exists are skipped (and forgotten) without affecting the rest. Nothing is restored if your desktop/monitor layout changed since
+- **Forget layout** button per server (expanded list) clears that session's remembered layout if a bad one is blocking your connection
 
 ### Rendering & compatibility
 
@@ -50,7 +52,7 @@ Each install starts with an **empty server list** — no servers are bundled or 
 
 ### Other
 
-- Remembers size and position of the join window, the MUD window, and — **per saved server** — the game window and each of its popouts, so every session can have its own layout (off-screen positions are ignored)
+- Remembers size and position of every app window. The join window and server-configuration window are global; the game window, its popouts, and the MUD window are remembered **per saved server**, so every session can have its own layout (off-screen positions are ignored)
 - **Import / Export** (header buttons): one JSON file with servers (including usernames/passwords), Mud Setup (including API key), Mud options, preferences, and window layouts. Import merges servers by id or URL. The file is written owner-only; keep it private
 - Local log files for troubleshooting (no browsing data, URLs, page content, or credentials logged)
 - Small installers: English-only Chromium locale, maximum compression, spellcheck disabled (AppImage ~90 MB, .deb ~90 MB)
@@ -87,8 +89,8 @@ Then install the file that matches your OS:
 
 | OS | File in `dist/` | Install |
 |----|-----------------|---------|
-| **Linux (.deb)** | `ChrisCustomFLC-MultiOS-0.3.0-linux.deb` | Double-click or `sudo apt install ./dist/ChrisCustomFLC-MultiOS-0.3.0-linux.deb` |
-| **Linux (AppImage)** | `ChrisCustomFLC-MultiOS-0.3.0-linux.AppImage` | Mark executable (`chmod +x`), then run |
+| **Linux (.deb)** | `ChrisCustomFLC-MultiOS-0.4.0-linux.deb` | Double-click or `sudo apt install ./dist/ChrisCustomFLC-MultiOS-0.4.0-linux.deb` |
+| **Linux (AppImage)** | `ChrisCustomFLC-MultiOS-0.4.0-linux.AppImage` | Mark executable (`chmod +x`), then run |
 | **Windows** | `ChrisCustomFLC-MultiOS-*-windows-setup.exe` | Available from [Releases](https://github.com/emirikol1/chris-custom-flc-multios/releases/latest) when built |
 | **macOS** | `ChrisCustomFLC-MultiOS-*-mac.dmg` | Available from [Releases](https://github.com/emirikol1/chris-custom-flc-multios/releases/latest) when built |
 

@@ -224,6 +224,36 @@ body {
   color: var(--text-muted);
 }
 
+.panel-header-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* Server configuration window */
+.dialog-body {
+  min-height: 100vh;
+}
+
+.dialog-main {
+  padding-top: 1rem;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.dialog-actions .btn-primary {
+  min-width: 9rem;
+}
+
+.server-card-actions .btn-ghost {
+  color: var(--text-muted);
+}
+
 /* Compact server rows shown while "Your servers" is collapsed */
 .server-compact-list {
   display: flex;

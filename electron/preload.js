@@ -34,6 +34,16 @@ contextBridge.exposeInMainWorld('flc', {
     exportToFile: () => ipcRenderer.invoke('settings:export'),
     importFromFile: () => ipcRenderer.invoke('settings:import'),
   },
+  serverConfig: {
+    open: (mode, id) => ipcRenderer.invoke('server-config:open', mode, id),
+    getContext: () => ipcRenderer.invoke('server-config:get-context'),
+    close: () => ipcRenderer.send('server-config:close'),
+    onContext: subscribe('server-config:context'),
+  },
+  layout: {
+    forget: (serverId) => ipcRenderer.invoke('game:forget-layout', serverId),
+  },
+  onServersChanged: subscribe('servers:changed'),
   ai: {
     getPresets: () => ipcRenderer.invoke('ai:get-presets'),
     getSettings: () => ipcRenderer.invoke('ai:get-settings'),

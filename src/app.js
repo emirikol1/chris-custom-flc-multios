@@ -4,29 +4,12 @@
   /** @type {Array<{id:string,label:string,url:string,notes?:string,order?:number,username?:string,password?:string}>} */
   let servers = [];
 
-  let formMode = "add";
 
   const $ = (sel) => document.querySelector(sel);
 
   const els = {
     serverList: $("#server-list"),
     serverListEmpty: $("#server-list-empty"),
-    serverForm: $("#server-form"),
-    serverFormHeading: $("#server-form-heading"),
-    serverFormSubmit: $("#server-form-submit"),
-    formCancelBtn: $("#form-cancel-btn"),
-    formError: $("#form-error"),
-    editId: $("#server-edit-id"),
-    label: $("#server-label"),
-    url: $("#server-url"),
-    notes: $("#server-notes"),
-    username: $("#server-username"),
-    usernameManual: $("#server-username-manual"),
-    getUsersBtn: $("#get-users-btn"),
-    getUsersResult: $("#get-users-result"),
-    password: $("#server-password"),
-    passwordToggle: $("#password-toggle-btn"),
-    autoJoin: $("#server-autojoin"),
     incognito: $("#incognito-toggle"),
     mudToggle: $("#mud-toggle"),
     webglStatus: $("#webgl-status"),
@@ -56,6 +39,7 @@
     mudStatusLight: $("#mud-status-light"),
     settingsImportBtn: $("#settings-import-btn"),
     settingsExportBtn: $("#settings-export-btn"),
+    addServerBtn: $("#add-server-btn"),
   };
 
   /** Collapsed state of the two collapsible panels (persisted in app prefs). */
@@ -113,134 +97,6 @@
         if (toast.isConnected) toast.remove();
       }, 5000);
     }
-  }
-
-  function setFormError(message) {
-    if (!message) {
-      els.formError.hidden = true;
-      els.formError.textContent = "";
-      return;
-    }
-    els.formError.hidden = false;
-    els.formError.textContent = message;
-  }
-
-  function resetPasswordVisibility() {
-    els.password.type = "password";
-    els.passwordToggle.textContent = "Show";
-    els.passwordToggle.setAttribute("aria-pressed", "false");
-    els.passwordToggle.setAttribute("aria-label", "Show password");
-  }
-
-  const MANUAL_USER = "__manual__";
-
-  /**
-   * Rebuild the username dropdown. `users` are names fetched from the server;
-   * `selected` is the stored username (kept even if not in the list).
-   * @param {string[]} users
-   * @param {string} [selected]
-   */
-  function setUsernameOptions(users, selected) {
-    const names = [...users];
-    if (selected && !names.includes(selected)) names.unshift(selected);
-    els.username.innerHTML = "";
-    const none = document.createElement("option");
-    none.value = "";
-    none.textContent = "— none —";
-    els.username.appendChild(none);
-    for (const name of names) {
-      const opt = document.createElement("option");
-      opt.value = name;
-      opt.textContent = name;
-      els.username.appendChild(opt);
-    }
-    const manual = document.createElement("option");
-    manual.value = MANUAL_USER;
-    manual.textContent = "Type a name…";
-    els.username.appendChild(manual);
-    els.username.value = selected || "";
-    els.usernameManual.hidden = true;
-    els.usernameManual.value = "";
-  }
-
-  function readUsername() {
-    const v = els.username.value;
-    if (v === MANUAL_USER) return els.usernameManual.value.trim();
-    return v.trim();
-  }
-
-  function setGetUsersResult(text, cls) {
-    els.getUsersResult.className = `field-hint${cls ? ` ${cls}` : ""}`;
-    els.getUsersResult.textContent = text || "";
-  }
-
-  const GET_USERS_ERROR_TEXT = {
-    invalid_url: "Enter a valid server URL first.",
-    unreachable: "Could not reach the server.",
-    not_found: "No join page found at that URL.",
-    http_error: "The server returned an error.",
-    no_users: "No users listed on the join page (the world may not be active).",
-  };
-
-  async function handleGetUsers() {
-    const getUsers = window.flc?.servers?.getUsers;
-    if (typeof getUsers !== "function") return;
-    const url = els.url.value.trim();
-    if (!url) {
-      setGetUsersResult(GET_USERS_ERROR_TEXT.invalid_url, "bad");
-      els.url.focus();
-      return;
-    }
-    const previous = readUsername();
-    els.getUsersBtn.disabled = true;
-    els.getUsersBtn.textContent = "Fetching…";
-    setGetUsersResult("");
-    try {
-      const result = await getUsers(url, els.editId.value || undefined);
-      if (result && result.ok) {
-        setUsernameOptions(result.users, previous && result.users.includes(previous) ? previous : "");
-        setGetUsersResult(`${result.users.length} user${result.users.length === 1 ? "" : "s"} found`, "ok");
-      } else {
-        setGetUsersResult(GET_USERS_ERROR_TEXT[result && result.error] || GET_USERS_ERROR_TEXT.http_error, "bad");
-      }
-    } catch {
-      setGetUsersResult(GET_USERS_ERROR_TEXT.http_error, "bad");
-    } finally {
-      els.getUsersBtn.disabled = false;
-      els.getUsersBtn.textContent = "Get Users";
-    }
-  }
-
-  function setAddMode() {
-    formMode = "add";
-    els.editId.value = "";
-    els.serverForm.reset();
-    setUsernameOptions([], "");
-    setGetUsersResult("");
-    els.autoJoin.checked = true;
-    resetPasswordVisibility();
-    setFormError("");
-    els.serverFormHeading.textContent = "Add Server";
-    els.serverFormSubmit.textContent = "Add Server";
-    els.formCancelBtn.hidden = true;
-  }
-
-  function setEditMode(server) {
-    formMode = "edit";
-    els.editId.value = server.id;
-    els.label.value = server.label || "";
-    els.url.value = server.url || "";
-    els.notes.value = server.notes || "";
-    setUsernameOptions([], server.username || "");
-    setGetUsersResult("");
-    els.password.value = server.password || "";
-    els.autoJoin.checked = server.autoJoin !== false;
-    resetPasswordVisibility();
-    setFormError("");
-    els.serverFormHeading.textContent = "Edit Server";
-    els.serverFormSubmit.textContent = "Update Server";
-    els.formCancelBtn.hidden = false;
-    els.label.focus();
   }
 
   function sortedServers() {
@@ -305,6 +161,8 @@
         <div class="server-card-actions">
           <button type="button" class="btn btn-primary btn-sm" data-action="connect">Connect</button>
           <button type="button" class="btn btn-secondary btn-sm" data-action="edit">Edit</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="clone" title="New server configuration pre-filled from this one">Clone</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-action="forget-layout" title="Forget this session's remembered screen layout (window sizes, positions, open sheets and popouts). Use if a bad layout blocks connecting.">Forget layout</button>
           <button type="button" class="btn btn-danger btn-sm" data-action="delete">Delete</button>
         </div>
       `;
@@ -312,12 +170,58 @@
       card.querySelector('[data-action="connect"]').addEventListener("click", () =>
         handleConnect(server)
       );
-      card.querySelector('[data-action="edit"]').addEventListener("click", () => setEditMode(server));
+      card.querySelector('[data-action="edit"]').addEventListener("click", () =>
+        openServerConfig("edit", server.id)
+      );
+      card.querySelector('[data-action="clone"]').addEventListener("click", () =>
+        openServerConfig("clone", server.id)
+      );
+      card.querySelector('[data-action="forget-layout"]').addEventListener("click", () =>
+        handleForgetLayout(server)
+      );
       card.querySelector('[data-action="delete"]').addEventListener("click", () =>
         handleDelete(server)
       );
 
       els.serverList.appendChild(card);
+    }
+  }
+
+  /**
+   * @param {'add'|'edit'|'clone'} mode
+   * @param {string} [id]
+   */
+  async function openServerConfig(mode, id) {
+    const open = window.flc?.serverConfig?.open;
+    if (typeof open !== "function") {
+      showNotification("Server configuration is not available", "error");
+      return;
+    }
+    try {
+      const result = await open(mode, id);
+      if (result && result.ok === false) {
+        showNotification("That server no longer exists.", "error");
+        await loadServers();
+      }
+    } catch (err) {
+      showNotification(err && err.message ? err.message : String(err), "error");
+    }
+  }
+
+  async function handleForgetLayout(server) {
+    const forget = window.flc?.layout?.forget;
+    if (typeof forget !== "function") return;
+    try {
+      const result = await forget(server.id);
+      const n = result && typeof result.removed === "number" ? result.removed : 0;
+      showNotification(
+        n > 0
+          ? `Forgot the screen layout for "${server.label}". Next connection starts fresh.`
+          : `No remembered layout for "${server.label}".`,
+        "info"
+      );
+    } catch (err) {
+      showNotification(err && err.message ? err.message : String(err), "error");
     }
   }
 
@@ -376,76 +280,10 @@
     try {
       servers = await window.flc.servers.delete(server.id);
       if (!Array.isArray(servers)) servers = [];
-      if (els.editId.value === server.id) setAddMode();
       renderServerList();
       showNotification("Server deleted", "info");
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
-      showNotification(msg, "error");
-    }
-  }
-
-  function readFormPayload() {
-    return {
-      label: els.label.value.trim(),
-      url: els.url.value.trim(),
-      notes: els.notes.value.trim(),
-      username: readUsername() || undefined,
-      password: els.password.value || undefined,
-      autoJoin: Boolean(els.autoJoin.checked),
-    };
-  }
-
-  async function handleFormSubmit(event) {
-    event.preventDefault();
-    setFormError("");
-
-    const payload = readFormPayload();
-    if (!payload.label) {
-      setFormError("Label is required.");
-      els.label.focus();
-      return;
-    }
-    if (!payload.url) {
-      setFormError("URL is required.");
-      els.url.focus();
-      return;
-    }
-
-    try {
-      if (formMode === "edit") {
-        const id = els.editId.value;
-        if (!id) {
-          setFormError("Missing server id for edit.");
-          return;
-        }
-        if (typeof window.flc?.servers?.update !== "function") {
-          showNotification("Server storage API not available", "error");
-          return;
-        }
-        servers = await window.flc.servers.update(id, payload);
-        showNotification("Server updated", "info");
-        setAddMode();
-      } else {
-        if (typeof window.flc?.servers?.add !== "function") {
-          showNotification("Server storage API not available", "error");
-          return;
-        }
-        const order = servers.length;
-        servers = await window.flc.servers.add({ ...payload, order });
-        showNotification("Server added", "info");
-        els.serverForm.reset();
-        setUsernameOptions([], "");
-        setGetUsersResult("");
-        els.autoJoin.checked = true;
-        resetPasswordVisibility();
-      }
-
-      if (!Array.isArray(servers)) servers = [];
-      renderServerList();
-    } catch (err) {
-      const msg = err && err.message ? err.message : String(err);
-      setFormError(msg);
       showNotification(msg, "error");
     }
   }
@@ -1001,7 +839,6 @@
         showNotification(`Imported ${parts.join(" · ") || "nothing"}.`, "info");
         // Refresh everything the import may have touched.
         await loadServers();
-        setAddMode();
         await loadAiSetup();
         await loadPrefs();
       } else if (result && !result.canceled) {
@@ -1016,25 +853,12 @@
     bindMudUi();
     els.settingsExportBtn.addEventListener("click", handleExportSettings);
     els.settingsImportBtn.addEventListener("click", handleImportSettings);
-    els.serverForm.addEventListener("submit", handleFormSubmit);
-    els.getUsersBtn.addEventListener("click", handleGetUsers);
-    els.username.addEventListener("change", () => {
-      const manual = els.username.value === MANUAL_USER;
-      els.usernameManual.hidden = !manual;
-      if (manual) els.usernameManual.focus();
-    });
-    els.formCancelBtn.addEventListener("click", () => setAddMode());
-
-    els.passwordToggle.addEventListener("click", () => {
-      const showing = els.password.type === "text";
-      els.password.type = showing ? "password" : "text";
-      els.passwordToggle.textContent = showing ? "Show" : "Hide";
-      els.passwordToggle.setAttribute("aria-pressed", showing ? "false" : "true");
-      els.passwordToggle.setAttribute(
-        "aria-label",
-        showing ? "Show password" : "Hide password"
-      );
-    });
+    els.addServerBtn.addEventListener("click", () => openServerConfig("add"));
+    if (typeof window.flc?.onServersChanged === "function") {
+      window.flc.onServersChanged(() => {
+        loadServers();
+      });
+    }
 
     if (els.webglOverride) {
       els.webglOverride.addEventListener("change", () => {
@@ -1045,7 +869,6 @@
 
   function init() {
     bindUi();
-    setAddMode();
     subscribeWebglFallback();
     refreshWebglStatusFromBackend();
     loadServers();

@@ -252,7 +252,72 @@ function createWindowStateStore({ filePath, getDisplays } = {}) {
     };
   }
 
-  return { restore, track };
+  /**
+   * Raw record access for non-bounds session data stored alongside window
+   * bounds (e.g. which popouts a session had open).
+   * @param {string} key
+   * @returns {unknown}
+   */
+  function get(key) {
+    return readStates(filePath)[key];
+  }
+
+  /**
+   * @param {string} key
+   * @param {object | undefined} value `undefined` deletes the record
+   */
+  function set(key, value) {
+    try {
+      const states = readStates(filePath);
+      if (value === undefined) {
+        delete states[key];
+      } else {
+        states[key] = value;
+      }
+      writeStates(filePath, states);
+    } catch (err) {
+      getLogger().logWarn('window-state: set failed', {
+        key,
+        error: err && err.name ? err.name : 'Error',
+      });
+    }
+  }
+
+  /**
+   * True if a record exists for this key (bounds or raw).
+   * @param {string} key
+   */
+  function has(key) {
+    return Object.prototype.hasOwnProperty.call(readStates(filePath), key);
+  }
+
+  /**
+   * Delete a key and everything namespaced under it ("<prefix>:...").
+   * Used by "Forget layout" for one session.
+   * @param {string} prefix
+   * @returns {number} number of records removed
+   */
+  function forgetPrefix(prefix) {
+    try {
+      const states = readStates(filePath);
+      let removed = 0;
+      for (const key of Object.keys(states)) {
+        if (key === prefix || key.startsWith(`${prefix}:`)) {
+          delete states[key];
+          removed += 1;
+        }
+      }
+      if (removed > 0) writeStates(filePath, states);
+      return removed;
+    } catch (err) {
+      getLogger().logWarn('window-state: forget failed', {
+        error: err && err.name ? err.name : 'Error',
+      });
+      return 0;
+    }
+  }
+
+  return { restore, track, save: saveNow, get, set, has, forgetPrefix };
 }
 
 module.exports = {

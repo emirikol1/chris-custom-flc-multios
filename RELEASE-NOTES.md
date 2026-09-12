@@ -1,6 +1,13 @@
-# v0.3.0
+# v0.4.0
 
 Chris's Custom FLC MultiOS — Foundry VTT join client for Windows, macOS, and Linux.
+
+## What's new in 0.4.0
+
+- **Screen state saved per session.** On close, disconnect, reload, or quit the app records the open Foundry windows (sheets, sidebar tabs, module apps) and PopOut! popouts with their sizes and positions. Reconnecting to that server reopens them and force-closes windows that weren't part of the layout, so you come back to the same screen. Windows whose document is gone are skipped and forgotten without affecting anything else; if your desktop/monitor layout changed, nothing is restored.
+- **Forget layout** button per server in the expanded list, for when a bad layout blocks a connection.
+- **MUD window position is per session** (join window and server-configuration window stay global).
+- **Server configuration window.** *Add Server*, *Edit*, and the new **Clone** open a dedicated window instead of a form in the main panel.
 
 ## What's new in 0.3.0
 

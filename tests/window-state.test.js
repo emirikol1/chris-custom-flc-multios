@@ -201,6 +201,26 @@ describe('createWindowStateStore', () => {
     expect(() => createWindowStateStore({})).toThrow(TypeError);
   });
 
+  it('get/set/has store raw records and forgetPrefix removes a namespace', () => {
+    const store = createWindowStateStore({ filePath: tmp.filePath, getDisplays: () => [PRIMARY] });
+    writeStates(tmp.filePath, {
+      join: { x: 1, y: 1, width: 900, height: 600 },
+      'game:s1': { x: 1, y: 1, width: 1280, height: 800 },
+      'game:s10': { x: 1, y: 1, width: 1280, height: 800 },
+    });
+    expect(store.has('join')).toBe(true);
+    expect(store.has('nope')).toBe(false);
+    store.set('game:s1:layout', { windows: [], savedAt: 'T' });
+    store.set('game:s1:popout:document:Actor.x', { x: 5, y: 5, width: 400, height: 300 });
+    expect(store.get('game:s1:layout')).toEqual({ windows: [], savedAt: 'T' });
+
+    expect(store.forgetPrefix('game:s1')).toBe(3);
+    const left = Object.keys(readStates(tmp.filePath)).sort();
+    expect(left).toEqual(['game:s10', 'join']); // prefix match is exact-or-":" scoped
+    store.set('join', undefined);
+    expect(store.has('join')).toBe(false);
+  });
+
   it('restore() uses saved state for the key filtered through pickBounds', () => {
     writeStates(tmp.filePath, {
       main: { x: 100, y: 100, width: 800, height: 600, maximized: true },
