@@ -10,8 +10,8 @@ Inspired by the original [Foundry Lightweight Client](https://github.com/phenome
 
 | File | Platform | Install |
 |------|----------|---------|
-| `chris-custom-flc-multios_0.1.0_amd64.deb` | Linux (Debian/Ubuntu/Mint) | Double-click, or `sudo apt install ./chris-custom-flc-multios_0.1.0_amd64.deb` |
-| `Chris's Custom FLC MultiOS-0.1.0.AppImage` | Linux (portable) | `chmod +x "Chris's Custom FLC MultiOS-0.1.0.AppImage"` then run |
+| `ChrisCustomFLC-MultiOS-0.1.0-linux.deb` | Linux (Debian/Ubuntu/Mint) | Double-click, or `sudo apt install ./ChrisCustomFLC-MultiOS-0.1.0-linux.deb` |
+| `ChrisCustomFLC-MultiOS-0.1.0-linux.AppImage` | Linux (portable) | `chmod +x ChrisCustomFLC-MultiOS-0.1.0-linux.AppImage` then run |
 
 Windows (`.exe`) and macOS (`.dmg`) builds are attached to **[GitHub Releases](https://github.com/emirikol1/chris-custom-flc-multios/releases/latest)** when CI publishes them.
 
