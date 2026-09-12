@@ -224,6 +224,18 @@ const DESCRIBE_FN = `function describeApp(app) {
     return cls ? { kind: 'app', cls: cls } : null;
   }`;
 
+/**
+ * Shared page-side helper: PopOut! declares `class PopoutModule` at the top
+ * level of a classic script, so it is a lexical global — `window.PopoutModule`
+ * is undefined. Resolve the bare identifier (works in the main world) first.
+ */
+const POPOUT_MODULE_FN = `function getPopoutModule() {
+    try {
+      var M = (typeof PopoutModule !== 'undefined') ? PopoutModule : window.PopoutModule;
+      return (M && M.singleton) ? M.singleton : null;
+    } catch (e) { return null; }
+  }`;
+
 /** Shared page-side helper: find a Foundry Application from a descriptor (async). */
 const RESOLVE_FN = `async function resolveApp(desc) {
     if (desc.kind === 'document') {
@@ -261,10 +273,11 @@ const RESOLVE_FN = `async function resolveApp(desc) {
  */
 const SNAPSHOT_LAYOUT_SCRIPT = `(function () {
   ${DESCRIBE_FN}
+  ${POPOUT_MODULE_FN}
   function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : undefined; }
   try {
     if (!window.game || game.ready !== true) return null;
-    var mod = window.PopoutModule && window.PopoutModule.singleton;
+    var mod = getPopoutModule();
     var out = [];
     var seen = {};
     function push(app) {
@@ -309,29 +322,86 @@ const SNAPSHOT_LAYOUT_SCRIPT = `(function () {
  * Runs inside a popout OS window. Finds the PopOut! state whose window is this
  * one and returns a descriptor of the popped-out Application, or null.
  */
-const IDENTIFY_POPOUT_SCRIPT = `(function () {
+/**
+ * Runs in a popout window: tag it so the game window can find it among
+ * PopOut!'s states (the child cannot see the parent's lexical globals).
+ * @param {number} tag
+ */
+function buildTagPopoutScript(tag) {
+  return `(function () { try { window.__flcPopoutTag = ${Number(tag)}; return true; } catch (e) { return false; } })()`;
+}
+
+/**
+ * Runs in the game window: which Application lives in the popout tagged `tag`?
+ * Resolves to a descriptor or null.
+ * @param {number} tag
+ */
+function buildIdentifyPopoutScript(tag) {
+  return `(function () {
   ${DESCRIBE_FN}
+  ${POPOUT_MODULE_FN}
   try {
-    var root = window._rootWindow || window.opener;
-    var mod = root && root.PopoutModule && root.PopoutModule.singleton;
+    var mod = getPopoutModule();
     if (!mod || !mod.poppedOut || typeof mod.poppedOut.values !== 'function') return null;
     var it = mod.poppedOut.values();
     for (var step = it.next(); !step.done; step = it.next()) {
       var state = step.value;
-      if (state && state.window === window) return describeApp(state.app);
+      try {
+        if (state && state.window && !state.window.closed && state.window.__flcPopoutTag === ${Number(tag)}) {
+          return describeApp(state.app);
+        }
+      } catch (e) {}
     }
     return null;
   } catch (e) {
     return null;
   }
 })()`;
+}
+
+/**
+ * Runs in a popout window. PopOut! sizes the adopted application node to fill
+ * the window (top/left/width/height, usually 100%). Anything that later
+ * rewrites that inline style (a re-render applying pixel positions) leaves the
+ * content smaller than the window, so re-assert PopOut!'s values whenever the
+ * style attribute changes. Resolves to true once installed, false if the node
+ * is not there yet.
+ */
+const FIT_POPOUT_SCRIPT = `(function () {
+  try {
+    if (window.__flcFitInstalled) return true;
+    var node = null;
+    var kids = document.body ? document.body.children : [];
+    for (var i = 0; i < kids.length; i++) {
+      var el = kids[i];
+      if (el.classList && (el.classList.contains('application') || el.classList.contains('window-app') || el.classList.contains('app'))) { node = el; break; }
+    }
+    if (!node) return false;
+    var want = { top: node.style.top, left: node.style.left, width: node.style.width, height: node.style.height };
+    if (!want.width || !want.height) return false;
+    var fixing = false;
+    var mo = new MutationObserver(function () {
+      if (fixing) return;
+      fixing = true;
+      try {
+        for (var k in want) { if (node.style[k] !== want[k]) node.style[k] = want[k]; }
+      } finally { fixing = false; }
+    });
+    mo.observe(node, { attributes: true, attributeFilter: ['style'] });
+    window.__flcFitInstalled = true;
+    return true;
+  } catch (e) {
+    return false;
+  }
+})()`;
 
 /** Runs in the game window: is Foundry fully ready, and is PopOut! initialised? */
 const GAME_READY_SCRIPT = `(function () {
+  ${POPOUT_MODULE_FN}
   try {
     var g = window.game;
     if (!g || g.ready !== true) return { ready: false };
-    var mod = window.PopoutModule && window.PopoutModule.singleton;
+    var mod = getPopoutModule();
     return { ready: true, popout: !!(mod && mod.poppedOut) };
   } catch (e) {
     return { ready: false };
@@ -348,9 +418,10 @@ function buildRestoreScript(entry) {
   const json = JSON.stringify(sanitizeEntry(entry));
   return `(async function (entry) {
   ${RESOLVE_FN}
+  ${POPOUT_MODULE_FN}
   try {
     if (!entry) return { ok: false, reason: 'unknown_kind' };
-    var mod = window.PopoutModule && window.PopoutModule.singleton;
+    var mod = getPopoutModule();
     if (entry.mode === 'popout' && !(mod && typeof mod.onPopoutClicked === 'function')) {
       return { ok: false, reason: 'no_popout_module' };
     }
@@ -467,7 +538,9 @@ module.exports = {
   removeEntry,
   sameLayout,
   SNAPSHOT_LAYOUT_SCRIPT,
-  IDENTIFY_POPOUT_SCRIPT,
+  buildTagPopoutScript,
+  buildIdentifyPopoutScript,
+  FIT_POPOUT_SCRIPT,
   GAME_READY_SCRIPT,
   buildRestoreScript,
   buildCloseUnlistedScript,

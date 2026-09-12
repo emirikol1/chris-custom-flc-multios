@@ -1,6 +1,12 @@
-# v0.4.0
+# v0.4.1
 
 Chris's Custom FLC MultiOS — Foundry VTT join client for Windows, macOS, and Linux.
+
+## Fixes in 0.4.1
+
+- **Popout window larger than its contents.** PopOut! popouts were not being recognised (the module is a lexical global, not a `window` property), so a new popout inherited the remembered size of a *different* earlier popout and the sheet inside no longer filled the window. Popouts are now identified by the app they hold, remembered sizes are applied only for that same app, and the popped-out app is kept filling its window even if a re-render tries to pin it to pixel sizes.
+- Popouts are now correctly recorded and restored as popouts in the per-session screen state.
+- The session layout restore no longer runs twice on one page load.
 
 ## What's new in 0.4.0
 

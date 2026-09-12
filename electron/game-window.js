@@ -14,7 +14,9 @@ const {
   layoutRecordFromSnapshot,
   removeEntry,
   SNAPSHOT_LAYOUT_SCRIPT,
-  IDENTIFY_POPOUT_SCRIPT,
+  buildTagPopoutScript,
+  buildIdentifyPopoutScript,
+  FIT_POPOUT_SCRIPT,
   GAME_READY_SCRIPT,
   buildRestoreScript,
   buildCloseUnlistedScript,
@@ -286,6 +288,8 @@ function createLayoutCtx(layoutKey) {
     /** Bumped on each main-frame navigation; a restore runs at most once per load. */
     loadSeq: 0,
     restoreSeq: -1,
+    lastNavUrl: '',
+    lastNavAt: 0,
     snapshotsSuspended: false,
     pendingEntry: null,
     popouts: new Map(),
@@ -387,25 +391,74 @@ function trackPopoutAs(child, entry, key) {
  * @param {{ key: string, desc: object | null, untrack: (() => void) | null }} entry
  * @param {LayoutCtx} ctx
  */
-async function identifyPopout(child, entry, ctx) {
+let nextPopoutTag = 1;
+
+/**
+ * Poll until PopOut! (in the game window) tells us which Application the popout
+ * holds, then key its remembered bounds by that identity. The popout is tagged
+ * so the parent can find it: the child cannot see the parent's lexical globals.
+ * Bounds are applied only once (identity if known, slot fallback otherwise) so a
+ * fresh popout never inherits the size of a different, earlier popout.
+ * @param {import('electron').BrowserWindow} parent
+ * @param {import('electron').BrowserWindow} child
+ * @param {{ key: string, desc: object | null, untrack: (() => void) | null, boundsApplied: boolean }} entry
+ * @param {LayoutCtx} ctx
+ */
+async function identifyPopout(parent, child, entry, ctx) {
+  const tag = nextPopoutTag++;
   const started = Date.now();
-  while (!child.isDestroyed() && Date.now() - started < IDENTIFY_TIMEOUT_MS) {
+  let tagged = false;
+  while (!child.isDestroyed() && !parent.isDestroyed() && Date.now() - started < IDENTIFY_TIMEOUT_MS) {
+    if (!tagged) {
+      try {
+        tagged = Boolean(await child.webContents.executeJavaScript(buildTagPopoutScript(tag), true));
+      } catch {
+        tagged = false;
+      }
+    }
     let raw = null;
-    try {
-      raw = await child.webContents.executeJavaScript(IDENTIFY_POPOUT_SCRIPT, true);
-    } catch {
-      raw = null;
+    if (tagged) {
+      try {
+        raw = await parent.webContents.executeJavaScript(buildIdentifyPopoutScript(tag), true);
+      } catch {
+        raw = null;
+      }
     }
     const desc = sanitizeDescriptor(raw);
     if (desc) {
-      if (entry.desc && descriptorKey(entry.desc) === descriptorKey(desc)) return;
       const key = popoutBoundsKey(ctx.layoutKey, desc);
+      const same = entry.desc && descriptorKey(entry.desc) === descriptorKey(desc);
       const hadSaved = Boolean(deps.windowState && deps.windowState.has(key));
-      applySavedPopoutBounds(child, key);
-      trackPopoutAs(child, entry, key);
+      if (!entry.boundsApplied) {
+        applySavedPopoutBounds(child, key);
+        entry.boundsApplied = true;
+      }
+      if (!same) trackPopoutAs(child, entry, key);
       entry.desc = desc;
       logInfo('[game-window] popout identified', { kind: desc.kind, restoredBounds: hadSaved });
+      keepPopoutFitted(child).catch(() => {});
       return;
+    }
+    await new Promise((r) => setTimeout(r, IDENTIFY_POLL_MS));
+  }
+  // Not a PopOut! window (plain window.open): fall back to the slot's memory.
+  if (!child.isDestroyed() && !entry.boundsApplied) {
+    applySavedPopoutBounds(child, entry.key);
+    entry.boundsApplied = true;
+  }
+}
+
+/**
+ * Install the fit guard in a popout once PopOut! has placed the app node.
+ * @param {import('electron').BrowserWindow} child
+ */
+async function keepPopoutFitted(child) {
+  const started = Date.now();
+  while (!child.isDestroyed() && Date.now() - started < IDENTIFY_TIMEOUT_MS) {
+    try {
+      if (await child.webContents.executeJavaScript(FIT_POPOUT_SCRIPT, true)) return;
+    } catch {
+      // page not ready yet
     }
     await new Promise((r) => setTimeout(r, IDENTIFY_POLL_MS));
   }
@@ -599,11 +652,12 @@ function enablePopouts(parent, gameSession, ctx) {
 
   parent.webContents.on('did-create-window', (child) => {
     const slot = acquirePopoutSlot(ctx.layoutKey);
-    /** @type {{ key: string, desc: object | null, untrack: (() => void) | null, slot: number }} */
-    const entry = { key: popoutSlotKey(ctx.layoutKey, slot), desc: null, untrack: null, slot };
+    /** @type {{ key: string, desc: object | null, untrack: (() => void) | null, slot: number, boundsApplied: boolean }} */
+    const entry = { key: popoutSlotKey(ctx.layoutKey, slot), desc: null, untrack: null, slot, boundsApplied: false };
     ctx.popouts.set(child, entry);
 
-    // Opened by our own restore: we already know what it is.
+    // Opened by our own restore: we already know what it is, so its remembered
+    // bounds can be applied right away. Otherwise wait for identification.
     const expected = ctx.pendingEntry ? sanitizeDescriptor(ctx.pendingEntry) : null;
     if (expected) {
       entry.desc = expected;
@@ -611,10 +665,13 @@ function enablePopouts(parent, gameSession, ctx) {
     }
     logInfo('[game-window] popout opened', { slot, restored: Boolean(expected) });
     if (deps.windowState) {
-      applySavedPopoutBounds(child, entry.key);
+      if (expected) {
+        applySavedPopoutBounds(child, entry.key);
+        entry.boundsApplied = true;
+      }
       entry.untrack = deps.windowState.track(child, entry.key);
     }
-    identifyPopout(child, entry, ctx).catch(() => {});
+    identifyPopout(parent, child, entry, ctx).catch(() => {});
 
     child.on('closed', () => {
       ctx.popouts.delete(child);
@@ -809,7 +866,13 @@ function openGameWindow(payload, gpuPrefsPath) {
   }
 
   // A new document load (reload / disconnect / different world) starts over.
-  win.webContents.on('did-navigate', () => {
+  win.webContents.on('did-navigate', (_event, url) => {
+    // Foundry's /game load reports two navigations to the same document within
+    // milliseconds; treat those as one load (kept in memory only, never logged).
+    const now = Date.now();
+    if (url === ctx.lastNavUrl && now - ctx.lastNavAt < 2000) return;
+    ctx.lastNavUrl = url;
+    ctx.lastNavAt = now;
     stopSnapshotLoop(ctx);
     ctx.loadSeq += 1;
     ctx.restoring = false;

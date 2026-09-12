@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   GAME_READY_SCRIPT,
-  IDENTIFY_POPOUT_SCRIPT,
+  buildTagPopoutScript,
+  buildIdentifyPopoutScript,
+  FIT_POPOUT_SCRIPT,
   MAX_ENTRIES,
   SNAPSHOT_LAYOUT_SCRIPT,
   buildCloseUnlistedScript,
@@ -140,11 +142,21 @@ describe('layout records', () => {
 describe('page scripts', () => {
   it('are syntactically valid and self-contained', () => {
     parses(SNAPSHOT_LAYOUT_SCRIPT);
-    parses(IDENTIFY_POPOUT_SCRIPT);
+    parses(buildTagPopoutScript(7));
+    parses(buildIdentifyPopoutScript(7));
+    parses(FIT_POPOUT_SCRIPT);
     parses(GAME_READY_SCRIPT);
     expect(SNAPSHOT_LAYOUT_SCRIPT).toContain('ui.windows');
     expect(SNAPSHOT_LAYOUT_SCRIPT).toContain('foundry.applications');
-    expect(IDENTIFY_POPOUT_SCRIPT).toContain('state.window === window');
+    expect(buildTagPopoutScript(7)).toContain('__flcPopoutTag = 7');
+    expect(buildIdentifyPopoutScript(7)).toContain('__flcPopoutTag === 7');
+    expect(buildIdentifyPopoutScript('x')).toContain('=== NaN'); // never matches junk
+    // PopOut! is a lexical class, never a window property.
+    for (const src of [SNAPSHOT_LAYOUT_SCRIPT, GAME_READY_SCRIPT, buildIdentifyPopoutScript(1), buildRestoreScript({ kind: 'sidebar', tab: 'chat', mode: 'popout' })]) {
+      expect(src).toContain("typeof PopoutModule !== 'undefined'");
+      expect(src).not.toMatch(/window\.PopoutModule\s*&&/);
+    }
+    expect(FIT_POPOUT_SCRIPT).toContain('MutationObserver');
   });
 
   it('restore script embeds a sanitized entry', () => {
