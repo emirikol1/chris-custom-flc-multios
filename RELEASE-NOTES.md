@@ -68,6 +68,30 @@ Download **one** file for your computer. No Git or Node.js required.
 | Linux (Mint/Ubuntu/Debian) | `*.deb` | Double-click the downloaded file |
 | Linux (AppImage) | `*.AppImage` | Allow executing, then double-click |
 
+Windows and macOS builds are not signed with a developer certificate. Approve the app once. The button in the graphical prompts moves between OS versions; the commands do not.
+
+**Windows.** If the installer is blocked, click **More info**, then **Run anyway**. Or right-click the file → **Properties** → **Unblock**. From PowerShell in your Downloads folder:
+
+```powershell
+Get-ChildItem .\ChrisCustomFLC-MultiOS-*-windows-setup.exe | Unblock-File
+Start-Process (Get-ChildItem .\ChrisCustomFLC-MultiOS-*-windows-setup.exe | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+```
+
+**macOS.** Drag the app to **Applications**, then Control-click it and choose **Open**. If that item is gone, use **System Settings → Privacy & Security → Open Anyway**. From Terminal, after the app is in Applications:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Chris's Custom FLC MultiOS.app"
+open "/Applications/Chris's Custom FLC MultiOS.app"
+```
+
+If macOS says the app is damaged:
+
+```bash
+codesign --force --deep --sign - "/Applications/Chris's Custom FLC MultiOS.app"
+xattr -dr com.apple.quarantine "/Applications/Chris's Custom FLC MultiOS.app"
+open "/Applications/Chris's Custom FLC MultiOS.app"
+```
+
 Each install starts with an empty server list.
 
 ## Highlights
