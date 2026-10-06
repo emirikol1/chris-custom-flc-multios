@@ -1,6 +1,11 @@
-# v0.5.2
+# v0.5.3
 
 Chris's Custom FLC MultiOS — Foundry VTT join client for Windows, macOS, and Linux.
+
+## What's new in 0.5.3
+
+- **Check for updates** only looks. It tells you when a newer installer exists, and the button becomes **Download update**.
+- **Download update** saves that installer in your Downloads folder. The instructions stay on screen until you close the app. Close the app, then run that file yourself.
 
 ## What's new in 0.5.2
 

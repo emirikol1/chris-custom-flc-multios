@@ -641,6 +641,10 @@ body {
   pointer-events: none;
 }
 
+.notifications:has(.toast-persist) {
+  max-width: min(36rem, calc(100vw - 2rem));
+}
+
 .toast {
   pointer-events: auto;
   display: flex;

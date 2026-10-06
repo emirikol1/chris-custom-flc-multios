@@ -121,6 +121,7 @@ describe('checkForAppUpdate', () => {
       currentVersion: '0.5.0',
       platform: 'win32',
       downloadsDir: dir,
+      download: true,
       fetchRelease: async () => release('v0.6.0', [{ name: EXE, browser_download_url: GOOD_URL }]),
       request: async (url) => {
         seen.push(url);
@@ -133,6 +134,30 @@ describe('checkForAppUpdate', () => {
     expect(result.fileName).toBe(EXE);
     expect(result.message).toContain('Close this app');
     expect(result.message).toContain('Downloads folder');
+    expect(JSON.stringify(result)).not.toMatch(/https?:|\/home\/|\/tmp\//);
+  });
+
+  it('reports a newer release without saving it', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flc-update-'));
+    dirs.push(dir);
+    let called = false;
+    const result = await checkForAppUpdate({
+      currentVersion: '0.5.0',
+      platform: 'win32',
+      downloadsDir: dir,
+      fetchRelease: async () => release('v0.6.0', [{ name: EXE, browser_download_url: GOOD_URL }]),
+      request: async () => {
+        called = true;
+        return { statusCode: 200, headers: {}, stream: Readable.from([Buffer.from('installer-bytes')]) };
+      },
+    });
+    expect(called).toBe(false);
+    expect(fs.readdirSync(dir)).toEqual([]);
+    expect(result.status).toBe('available');
+    expect(result.version).toBe('0.6.0');
+    expect(result.fileName).toBe(EXE);
+    expect(result.message).toBe('Version 0.6.0 is available.');
+    expect(result.message).not.toContain('Close this app');
     expect(JSON.stringify(result)).not.toMatch(/https?:|\/home\/|\/tmp\//);
   });
 
@@ -177,13 +202,25 @@ describe('checkForAppUpdate', () => {
 describe('update check is request-only', () => {
   const main = fs.readFileSync(path.join(__dirname, '..', 'electron', 'main.js'), 'utf8');
   const appJs = fs.readFileSync(path.join(__dirname, '..', 'src', 'app.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'electron', 'preload.js'), 'utf8');
 
-  it('registers the check on the button handler and not at startup', () => {
+  it('registers the check and download on the button and not at startup', () => {
     expect(main).toMatch(/ipcMain\.handle\('app:check-update'/);
+    expect(main).toMatch(/ipcMain\.handle\('app:download-update'/);
+    expect(preload).toContain("download: () => ipcRenderer.invoke('app:download-update')");
     const startup = main.slice(main.indexOf('app.whenReady'));
-    expect(startup).not.toMatch(/checkForAppUpdate|app:check-update|releases\/latest/);
+    expect(startup).not.toMatch(/checkForAppUpdate|app:check-update|app:download-update|releases\/latest/);
     const init = appJs.slice(appJs.indexOf('function init'));
     expect(init).not.toContain('handleCheckUpdate');
-    expect(appJs).toContain('addEventListener("click", handleCheckUpdate)');
+    expect(init).not.toContain('handleDownloadUpdate');
+    expect(appJs).toContain('addEventListener("click", onUpdateButtonClick)');
+    const checkFn = appJs.slice(appJs.indexOf('async function handleCheckUpdate'), appJs.indexOf('async function handleDownloadUpdate'));
+    expect(checkFn).toContain('update?.check');
+    expect(checkFn).not.toContain('update?.download');
+    expect(checkFn).toContain('setUpdateButton("download")');
+    const downloadFn = appJs.slice(appJs.indexOf('async function handleDownloadUpdate'), appJs.indexOf('function onUpdateButtonClick'));
+    expect(downloadFn).toContain('update?.download');
+    expect(downloadFn).toContain('persist: true');
+    expect(downloadFn).toContain('status === "downloaded"');
   });
 });

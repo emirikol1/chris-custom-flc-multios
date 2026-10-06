@@ -73,9 +73,11 @@
    * @param {string} message
    * @param {'info'|'warn'|'error'} [level]
    */
-  function showNotification(message, level = "info") {
+  function showNotification(message, level = "info", options = {}) {
+    const persist = options.persist === true;
     const toast = document.createElement("div");
     toast.className = `toast toast-${level}`;
+    if (persist) toast.classList.add("toast-persist");
     toast.setAttribute("role", level === "error" ? "alert" : "status");
 
     const p = document.createElement("p");
@@ -83,17 +85,22 @@
     p.textContent = message;
     toast.appendChild(p);
 
-    const close = document.createElement("button");
-    close.type = "button";
-    close.className = "toast-close";
-    close.setAttribute("aria-label", "Dismiss");
-    close.textContent = "×";
-    close.addEventListener("click", () => toast.remove());
-    toast.appendChild(close);
+    if (!persist) {
+      const close = document.createElement("button");
+      close.type = "button";
+      close.className = "toast-close";
+      close.setAttribute("aria-label", "Dismiss");
+      close.textContent = "×";
+      close.addEventListener("click", () => toast.remove());
+      toast.appendChild(close);
+    }
 
+    if (persist) {
+      for (const old of els.notifications.querySelectorAll(".toast-persist")) old.remove();
+    }
     els.notifications.appendChild(toast);
 
-    if (level !== "error") {
+    if (!persist && level !== "error") {
       window.setTimeout(() => {
         if (toast.isConnected) toast.remove();
       }, 5000);
@@ -853,28 +860,88 @@
     }
   }
 
+  function setUpdateButton(mode) {
+    const btn = els.checkUpdateBtn;
+    if (!btn) return;
+    btn.dataset.mode = mode;
+    if (mode === "checking") {
+      btn.disabled = true;
+      btn.textContent = "Checking…";
+      return;
+    }
+    if (mode === "downloading") {
+      btn.disabled = true;
+      btn.textContent = "Downloading…";
+      return;
+    }
+    if (mode === "download") {
+      btn.disabled = false;
+      btn.textContent = "Download update";
+      btn.title = "Save the newer installer in your Downloads folder. Close the app, then run that file yourself.";
+      return;
+    }
+    btn.disabled = false;
+    btn.textContent = "Check for updates";
+    btn.title = "Check for a newer installer. Nothing is checked until you press this.";
+  }
+
   async function handleCheckUpdate() {
     const check = window.flc?.update?.check;
     if (typeof check !== "function" || !els.checkUpdateBtn) return;
-    els.checkUpdateBtn.disabled = true;
-    showNotification("Checking for an update…", "info");
+    setUpdateButton("checking");
     try {
       const result = await check();
       const message = result && result.message ? result.message : "Could not check for an update.";
-      const level = result && result.status === "error" ? "error" : "info";
-      showNotification(message, level);
+      if (result && result.status === "available") {
+        setUpdateButton("download");
+        showNotification(message, "info");
+      } else {
+        setUpdateButton("check");
+        showNotification(message, result && result.status === "error" ? "error" : "info");
+      }
     } catch {
+      setUpdateButton("check");
       showNotification("Could not check for an update.", "error");
-    } finally {
-      els.checkUpdateBtn.disabled = false;
     }
+  }
+
+  async function handleDownloadUpdate() {
+    const download = window.flc?.update?.download;
+    if (typeof download !== "function" || !els.checkUpdateBtn) return;
+    setUpdateButton("downloading");
+    try {
+      const result = await download();
+      const message = result && result.message ? result.message : "Could not download the update.";
+      const status = result && result.status;
+      if (status === "downloaded") {
+        setUpdateButton("download");
+        showNotification(message, "info", { persist: true });
+      } else if (status === "error" || status === "available") {
+        setUpdateButton("download");
+        showNotification(message, status === "error" ? "error" : "info");
+      } else {
+        setUpdateButton("check");
+        showNotification(message, "info");
+      }
+    } catch {
+      setUpdateButton("download");
+      showNotification("Could not download the update.", "error");
+    }
+  }
+
+  function onUpdateButtonClick() {
+    if (els.checkUpdateBtn && els.checkUpdateBtn.dataset.mode === "download") {
+      handleDownloadUpdate();
+      return;
+    }
+    handleCheckUpdate();
   }
 
   function bindUi() {
     bindMudUi();
     els.settingsExportBtn.addEventListener("click", handleExportSettings);
     els.settingsImportBtn.addEventListener("click", handleImportSettings);
-    els.checkUpdateBtn.addEventListener("click", handleCheckUpdate);
+    els.checkUpdateBtn.addEventListener("click", onUpdateButtonClick);
     els.addServerBtn.addEventListener("click", () => openServerConfig("add"));
     if (typeof window.flc?.onServersChanged === "function") {
       window.flc.onServersChanged(() => {

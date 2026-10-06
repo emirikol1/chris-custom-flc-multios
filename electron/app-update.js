@@ -184,6 +184,14 @@ function publicResult(code, extra) {
       message: `This copy (${current}) is newer than the published release (${version}).`,
     };
   }
+  if (code === 'available') {
+    return {
+      status: 'available',
+      version,
+      fileName,
+      message: `Version ${version} is available.`,
+    };
+  }
   if (code === 'downloaded') {
     return {
       status: 'downloaded',
@@ -354,12 +362,14 @@ async function fetchLatestRelease(request = httpsRequest) {
 }
 
 /**
- * Called only from the Check for updates button.
+ * Check runs only from the Check for updates button.
+ * Download runs only from the Download update button, after a check found a newer release.
  * @param {{
  *   currentVersion: string,
  *   platform: string,
  *   osRelease?: string,
  *   downloadsDir: string,
+ *   download?: boolean,
  *   fetchRelease?: () => Promise<unknown>,
  *   request?: (url: string, headers: Record<string, string>) => Promise<{ statusCode: number, headers: Record<string, string | string[] | undefined>, stream: NodeJS.ReadableStream }>,
  * }} opts
@@ -372,6 +382,7 @@ async function checkForAppUpdate(opts) {
     if (plan.action === 'error') return publicResult(plan.code);
     if (plan.action === 'current') return publicResult('current', plan);
     if (plan.action === 'ahead') return publicResult('ahead', plan);
+    if (!opts.download) return publicResult('available', plan);
     const dest = installerDestination(opts.downloadsDir, plan.fileName);
     await saveUrlToFile(plan.url, dest, opts.request || httpsRequest);
     return publicResult('downloaded', plan);

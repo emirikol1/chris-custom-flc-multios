@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld('flc', {
   },
   update: {
     check: () => ipcRenderer.invoke('app:check-update'),
+    download: () => ipcRenderer.invoke('app:download-update'),
   },
   onServersChanged: subscribe('servers:changed'),
   ai: {

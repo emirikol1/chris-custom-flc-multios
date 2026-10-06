@@ -637,7 +637,7 @@ registerGameIpc(gpuPrefsPath, {
 registerNarratorIpc();
 
 function registerUpdateIpc() {
-  ipcMain.handle('app:check-update', async () => {
+  async function runAppUpdate(download) {
     let osRelease = '';
     if (process.platform === 'linux') {
       try {
@@ -651,17 +651,22 @@ function registerUpdateIpc() {
       platform: process.platform,
       osRelease,
       downloadsDir: app.getPath('downloads'),
+      download: download === true,
     });
     if (result.status === 'downloaded') logInfo('[update] installer saved');
-    else if (result.status === 'current' || result.status === 'ahead') logInfo(`[update] ${result.status}`);
-    else logWarn('[update] check failed');
+    else if (result.status === 'current' || result.status === 'ahead' || result.status === 'available') {
+      logInfo(`[update] ${result.status}`);
+    } else logWarn(download ? '[update] download failed' : '[update] check failed');
     return {
       status: result.status,
       message: result.message,
       version: result.version,
       fileName: result.fileName,
     };
-  });
+  }
+
+  ipcMain.handle('app:check-update', () => runAppUpdate(false));
+  ipcMain.handle('app:download-update', () => runAppUpdate(true));
 }
 registerUpdateIpc();
 
