@@ -1,6 +1,10 @@
-# v0.5.1
+# v0.5.2
 
 Chris's Custom FLC MultiOS — Foundry VTT join client for Windows, macOS, and Linux.
+
+## What's new in 0.5.2
+
+- No feature changes. This release exists so an installed 0.5.1 can download it with **Check for updates**.
 
 ## What's new in 0.5.1
 

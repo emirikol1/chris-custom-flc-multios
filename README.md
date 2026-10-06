@@ -72,12 +72,12 @@ You do **not** need Git or Node.js to run the app. Pick **one** installer for yo
 2. Download the file for your OS (see table below).
 3. Run or open it to install.
 
-| OS | Download (v0.5.1) | Install |
+| OS | Download (v0.5.2) | Install |
 |----|-------------------|---------|
-| **Windows** | [ChrisCustomFLC-MultiOS-0.5.1-windows-setup.exe](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.1/ChrisCustomFLC-MultiOS-0.5.1-windows-setup.exe) | Double-click the installer, follow the prompts |
-| **macOS** | [ChrisCustomFLC-MultiOS-0.5.1-mac.dmg](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.1/ChrisCustomFLC-MultiOS-0.5.1-mac.dmg) | Open the DMG, drag the app to **Applications** |
-| **Linux (Mint / Ubuntu / Debian)** | [ChrisCustomFLC-MultiOS-0.5.1-linux.deb](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.1/ChrisCustomFLC-MultiOS-0.5.1-linux.deb) | Double-click the `.deb`, or `sudo apt install ./ChrisCustomFLC-MultiOS-0.5.1-linux.deb` |
-| **Linux (other)** | [ChrisCustomFLC-MultiOS-0.5.1-linux.AppImage](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.1/ChrisCustomFLC-MultiOS-0.5.1-linux.AppImage) | Right-click → **Properties** → allow executing, then double-click |
+| **Windows** | [ChrisCustomFLC-MultiOS-0.5.2-windows-setup.exe](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.2/ChrisCustomFLC-MultiOS-0.5.2-windows-setup.exe) | Double-click the installer, follow the prompts |
+| **macOS** | [ChrisCustomFLC-MultiOS-0.5.2-mac.dmg](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.2/ChrisCustomFLC-MultiOS-0.5.2-mac.dmg) | Open the DMG, drag the app to **Applications** |
+| **Linux (Mint / Ubuntu / Debian)** | [ChrisCustomFLC-MultiOS-0.5.2-linux.deb](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.2/ChrisCustomFLC-MultiOS-0.5.2-linux.deb) | Double-click the `.deb`, or `sudo apt install ./ChrisCustomFLC-MultiOS-0.5.2-linux.deb` |
+| **Linux (other)** | [ChrisCustomFLC-MultiOS-0.5.2-linux.AppImage](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.2/ChrisCustomFLC-MultiOS-0.5.2-linux.AppImage) | Right-click → **Properties** → allow executing, then double-click |
 
 These Windows and macOS installers are not signed with a Microsoft or Apple developer certificate. The first time you open one, that system asks you to approve it. The on-screen button moves between versions. The commands below stay in the same place.
 
@@ -125,8 +125,8 @@ Then install the file that matches your OS:
 |----|-----------------|---------|
 | **Linux (.deb)** | [`ChrisCustomFLC-MultiOS-0.4.1-linux.deb`](dist/ChrisCustomFLC-MultiOS-0.4.1-linux.deb) | Double-click or `sudo apt install ./dist/ChrisCustomFLC-MultiOS-0.4.1-linux.deb` |
 | **Linux (AppImage)** | [`ChrisCustomFLC-MultiOS-0.4.1-linux.AppImage`](dist/ChrisCustomFLC-MultiOS-0.4.1-linux.AppImage) | Mark executable (`chmod +x`), then run |
-| **Windows** | not in `dist/` | [Download from the release](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.1/ChrisCustomFLC-MultiOS-0.5.1-windows-setup.exe) |
-| **macOS** | not in `dist/` | [Download from the release](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.1/ChrisCustomFLC-MultiOS-0.5.1-mac.dmg) |
+| **Windows** | not in `dist/` | [Download from the release](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.2/ChrisCustomFLC-MultiOS-0.5.2-windows-setup.exe) |
+| **macOS** | not in `dist/` | [Download from the release](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.2/ChrisCustomFLC-MultiOS-0.5.2-mac.dmg) |
 
 > **Note:** The `dist/` folder currently ships Linux builds in-tree. Windows and macOS installers are produced by CI and attached to GitHub Releases.
 
