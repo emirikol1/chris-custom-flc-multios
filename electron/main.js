@@ -99,6 +99,7 @@ const appPrefsPath = getAppPrefsPath();
 const aiProviderPath = getAiProviderPath();
 const narratorRoot = getNarratorRoot();
 const pkg = require('../package.json');
+const { checkForAppUpdate } = require('./app-update');
 
 const windowState = createWindowStateStore({ filePath: getWindowStatePath() });
 
@@ -634,6 +635,35 @@ registerGameIpc(gpuPrefsPath, {
   },
 });
 registerNarratorIpc();
+
+function registerUpdateIpc() {
+  ipcMain.handle('app:check-update', async () => {
+    let osRelease = '';
+    if (process.platform === 'linux') {
+      try {
+        osRelease = fs.readFileSync('/etc/os-release', 'utf8');
+      } catch {
+        osRelease = '';
+      }
+    }
+    const result = await checkForAppUpdate({
+      currentVersion: pkg.version,
+      platform: process.platform,
+      osRelease,
+      downloadsDir: app.getPath('downloads'),
+    });
+    if (result.status === 'downloaded') logInfo('[update] installer saved');
+    else if (result.status === 'current' || result.status === 'ahead') logInfo(`[update] ${result.status}`);
+    else logWarn('[update] check failed');
+    return {
+      status: result.status,
+      message: result.message,
+      version: result.version,
+      fileName: result.fileName,
+    };
+  });
+}
+registerUpdateIpc();
 
 app.whenReady().then(() => {
   ensureServersFile(serversFilePath);

@@ -43,6 +43,9 @@ contextBridge.exposeInMainWorld('flc', {
   layout: {
     forget: (serverId) => ipcRenderer.invoke('game:forget-layout', serverId),
   },
+  update: {
+    check: () => ipcRenderer.invoke('app:check-update'),
+  },
   onServersChanged: subscribe('servers:changed'),
   ai: {
     getPresets: () => ipcRenderer.invoke('ai:get-presets'),

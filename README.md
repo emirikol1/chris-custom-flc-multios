@@ -57,6 +57,7 @@ Each install starts with an **empty server list** — no servers are bundled or 
 
 - Remembers size and position of every app window. The join window and server-configuration window are global; the game window, its popouts, and the MUD window are remembered **per saved server**, so every session can have its own layout (off-screen positions are ignored)
 - **Import / Export** (header buttons): one JSON file with servers (including usernames/passwords), Mud Setup (including API key), Mud options, preferences, and window layouts. Import merges servers by id or URL. The file is written owner-only; keep it private
+- **Check for updates** (header button): looks for a newer installer only when you press it. A newer installer is saved in your Downloads folder. Close the app, then run that file yourself
 - Local log files for troubleshooting (no browsing data, URLs, page content, or credentials logged)
 - Small installers: English-only Chromium locale, maximum compression, spellcheck disabled (AppImage ~90 MB, .deb ~90 MB)
 - Cross-platform installers built by GitHub Actions
@@ -71,12 +72,12 @@ You do **not** need Git or Node.js to run the app. Pick **one** installer for yo
 2. Download the file for your OS (see table below).
 3. Run or open it to install.
 
-| OS | Download (v0.5.0) | Install |
+| OS | Download (v0.5.1) | Install |
 |----|-------------------|---------|
-| **Windows** | [ChrisCustomFLC-MultiOS-0.5.0-windows-setup.exe](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.0/ChrisCustomFLC-MultiOS-0.5.0-windows-setup.exe) | Double-click the installer, follow the prompts |
-| **macOS** | [ChrisCustomFLC-MultiOS-0.5.0-mac.dmg](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.0/ChrisCustomFLC-MultiOS-0.5.0-mac.dmg) | Open the DMG, drag the app to **Applications** |
-| **Linux (Mint / Ubuntu / Debian)** | [ChrisCustomFLC-MultiOS-0.5.0-linux.deb](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.0/ChrisCustomFLC-MultiOS-0.5.0-linux.deb) | Double-click the `.deb`, or `sudo apt install ./ChrisCustomFLC-MultiOS-0.5.0-linux.deb` |
-| **Linux (other)** | [ChrisCustomFLC-MultiOS-0.5.0-linux.AppImage](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.0/ChrisCustomFLC-MultiOS-0.5.0-linux.AppImage) | Right-click → **Properties** → allow executing, then double-click |
+| **Windows** | [ChrisCustomFLC-MultiOS-0.5.1-windows-setup.exe](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.1/ChrisCustomFLC-MultiOS-0.5.1-windows-setup.exe) | Double-click the installer, follow the prompts |
+| **macOS** | [ChrisCustomFLC-MultiOS-0.5.1-mac.dmg](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.1/ChrisCustomFLC-MultiOS-0.5.1-mac.dmg) | Open the DMG, drag the app to **Applications** |
+| **Linux (Mint / Ubuntu / Debian)** | [ChrisCustomFLC-MultiOS-0.5.1-linux.deb](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.1/ChrisCustomFLC-MultiOS-0.5.1-linux.deb) | Double-click the `.deb`, or `sudo apt install ./ChrisCustomFLC-MultiOS-0.5.1-linux.deb` |
+| **Linux (other)** | [ChrisCustomFLC-MultiOS-0.5.1-linux.AppImage](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.1/ChrisCustomFLC-MultiOS-0.5.1-linux.AppImage) | Right-click → **Properties** → allow executing, then double-click |
 
 All versions: **[Releases](https://github.com/emirikol1/chris-custom-flc-multios/releases)**.
 
@@ -96,8 +97,8 @@ Then install the file that matches your OS:
 |----|-----------------|---------|
 | **Linux (.deb)** | [`ChrisCustomFLC-MultiOS-0.4.1-linux.deb`](dist/ChrisCustomFLC-MultiOS-0.4.1-linux.deb) | Double-click or `sudo apt install ./dist/ChrisCustomFLC-MultiOS-0.4.1-linux.deb` |
 | **Linux (AppImage)** | [`ChrisCustomFLC-MultiOS-0.4.1-linux.AppImage`](dist/ChrisCustomFLC-MultiOS-0.4.1-linux.AppImage) | Mark executable (`chmod +x`), then run |
-| **Windows** | not in `dist/` | [Download from the release](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.0/ChrisCustomFLC-MultiOS-0.5.0-windows-setup.exe) |
-| **macOS** | not in `dist/` | [Download from the release](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.0/ChrisCustomFLC-MultiOS-0.5.0-mac.dmg) |
+| **Windows** | not in `dist/` | [Download from the release](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.1/ChrisCustomFLC-MultiOS-0.5.1-windows-setup.exe) |
+| **macOS** | not in `dist/` | [Download from the release](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.1/ChrisCustomFLC-MultiOS-0.5.1-mac.dmg) |
 
 > **Note:** The `dist/` folder currently ships Linux builds in-tree. Windows and macOS installers are produced by CI and attached to GitHub Releases.
 

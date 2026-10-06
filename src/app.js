@@ -39,6 +39,7 @@
     mudStatusLight: $("#mud-status-light"),
     settingsImportBtn: $("#settings-import-btn"),
     settingsExportBtn: $("#settings-export-btn"),
+    checkUpdateBtn: $("#check-update-btn"),
     addServerBtn: $("#add-server-btn"),
   };
 
@@ -852,10 +853,28 @@
     }
   }
 
+  async function handleCheckUpdate() {
+    const check = window.flc?.update?.check;
+    if (typeof check !== "function" || !els.checkUpdateBtn) return;
+    els.checkUpdateBtn.disabled = true;
+    showNotification("Checking for an update…", "info");
+    try {
+      const result = await check();
+      const message = result && result.message ? result.message : "Could not check for an update.";
+      const level = result && result.status === "error" ? "error" : "info";
+      showNotification(message, level);
+    } catch {
+      showNotification("Could not check for an update.", "error");
+    } finally {
+      els.checkUpdateBtn.disabled = false;
+    }
+  }
+
   function bindUi() {
     bindMudUi();
     els.settingsExportBtn.addEventListener("click", handleExportSettings);
     els.settingsImportBtn.addEventListener("click", handleImportSettings);
+    els.checkUpdateBtn.addEventListener("click", handleCheckUpdate);
     els.addServerBtn.addEventListener("click", () => openServerConfig("add"));
     if (typeof window.flc?.onServersChanged === "function") {
       window.flc.onServersChanged(() => {

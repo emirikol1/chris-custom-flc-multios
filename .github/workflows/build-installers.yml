@@ -27,12 +27,14 @@ jobs:
       # The test run writes logs/*.log on the runner; pre-dist refuses to package with them present.
       - run: node -e "require('fs').rmSync('logs',{recursive:true,force:true})"
       - run: npm run dist:linux
+      - id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
           name: linux-installers
           path: |
-            dist/*.AppImage
-            dist/*.deb
+            dist/*-${{ steps.version.outputs.version }}-*.AppImage
+            dist/*-${{ steps.version.outputs.version }}-*.deb
           if-no-files-found: error
 
   windows:
@@ -47,10 +49,12 @@ jobs:
       - run: npm test
       - run: node -e "require('fs').rmSync('logs',{recursive:true,force:true})"
       - run: npm run dist:win
+      - id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
           name: windows-installer
-          path: dist/*.exe
+          path: dist/*-${{ steps.version.outputs.version }}-*.exe
           if-no-files-found: error
 
   macos:
@@ -65,10 +69,12 @@ jobs:
       - run: npm test
       - run: node -e "require('fs').rmSync('logs',{recursive:true,force:true})"
       - run: npm run dist:mac
+      - id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
-          path: dist/*.dmg
+          path: dist/*-${{ steps.version.outputs.version }}-*.dmg
           if-no-files-found: error
 
   publish-release:
@@ -85,11 +91,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          find artifacts -type f \( -name '*.deb' -o -name '*.AppImage' -o -name '*.exe' -o -name '*.dmg' \) -print
-          mapfile -t FILES < <(find artifacts -type f \( -name '*.deb' -o -name '*.AppImage' -o -name '*.exe' -o -name '*.dmg' \))
-          test "${#FILES[@]}" -ge 4
           TAG="v$(sed -n 's/^  "version": "\([^"]*\)".*/\1/p' package.json | head -n 1)"
           test -n "$TAG" && test "$TAG" != "v"
+          VER="${TAG#v}"
+          find artifacts -type f \( -name '*.deb' -o -name '*.AppImage' -o -name '*.exe' -o -name '*.dmg' \) -name "*-${VER}-*" -print
+          mapfile -t FILES < <(find artifacts -type f \( -name '*.deb' -o -name '*.AppImage' -o -name '*.exe' -o -name '*.dmg' \) -name "*-${VER}-*")
+          test "${#FILES[@]}" -ge 4
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --target "${{ github.sha }}" --title "$TAG" --notes-file RELEASE-NOTES.md
           fi
