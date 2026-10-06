@@ -81,23 +81,34 @@ Download **one** file for your computer. No Git or Node.js required.
 | Linux (Mint/Ubuntu/Debian) | `*.deb` | Double-click the downloaded file |
 | Linux (AppImage) | `*.AppImage` | Allow executing, then double-click |
 
-Windows and macOS builds are not signed with a developer certificate. Approve the app once. The button in the graphical prompts moves between OS versions; the commands do not.
+Windows and Mac stop this app the first time you open it. The installers are not signed with an Apple or Microsoft developer certificate, so the computer treats the publisher as unknown and asks you to approve the app once. That approval is required before the app will open. Leave Windows Security and Mac security turned on. You are allowing this one app.
 
-**Windows.** If the installer is blocked, click **More info**, then **Run anyway**. Or right-click the file → **Properties** → **Unblock**. From PowerShell in your Downloads folder:
+Find the message on your screen, then do the step beside it.
+
+| OS | What you see | What to do |
+|----|----------------|------------|
+| **Windows** | Windows protected your PC | Click **More info**, then **Run anyway**. If that button is missing, right-click the installer, open **Properties**, check **Unblock**, and run it again. |
+| **Mac** | The app cannot be opened because the developer cannot be verified | Drag the app to **Applications**. Control-click it and choose **Open**, then click **Open** again. If **Open** is missing, open **System Settings → Privacy & Security** (older Macs: **System Preferences → Security & Privacy**) and click **Open Anyway**. |
+| **Mac** | The app is damaged and can't be opened | Use the Mac Terminal commands below. |
+| **Linux** | The installer opens normally | No extra approval. |
+
+Those on-screen buttons move between versions of Windows and macOS. When you cannot find the button, paste the commands below. On Windows, close this app first, then paste in PowerShell from your Downloads folder. On a Mac, drag the app to Applications first, then paste in Terminal.
+
+**Windows**
 
 ```powershell
 Get-ChildItem .\ChrisCustomFLC-MultiOS-*-windows-setup.exe | Unblock-File
 Start-Process (Get-ChildItem .\ChrisCustomFLC-MultiOS-*-windows-setup.exe | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
 ```
 
-**macOS.** Drag the app to **Applications**, then Control-click it and choose **Open**. If that item is gone, use **System Settings → Privacy & Security → Open Anyway**. From Terminal, after the app is in Applications:
+**Mac, after the app is in Applications**
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/Chris's Custom FLC MultiOS.app"
 open "/Applications/Chris's Custom FLC MultiOS.app"
 ```
 
-If macOS says the app is damaged:
+**Mac, when it says the app is damaged**
 
 ```bash
 codesign --force --deep --sign - "/Applications/Chris's Custom FLC MultiOS.app"

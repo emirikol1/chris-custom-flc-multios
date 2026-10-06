@@ -73,27 +73,34 @@ You do **not** need Git or Node.js to run the app. Download the installer for yo
 | **Linux (Mint / Ubuntu / Debian)** | [ChrisCustomFLC-MultiOS-0.5.4-linux.deb](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.4/ChrisCustomFLC-MultiOS-0.5.4-linux.deb) | Double-click the `.deb`, or `sudo apt install ./ChrisCustomFLC-MultiOS-0.5.4-linux.deb` |
 | **Linux (other)** | [ChrisCustomFLC-MultiOS-0.5.4-linux.AppImage](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.4/ChrisCustomFLC-MultiOS-0.5.4-linux.AppImage) | Right-click → **Properties** → allow executing, then double-click |
 
-These Windows and macOS installers are not signed with a Microsoft or Apple developer certificate. The first time you open one, that system asks you to approve it. The on-screen button moves between versions. The commands below stay in the same place.
+Windows and Mac stop this app the first time you open it. The installers are not signed with an Apple or Microsoft developer certificate, so the computer treats the publisher as unknown and asks you to approve the app once. That approval is required before the app will open. Leave Windows Security and Mac security turned on. You are allowing this one app.
 
-**Windows.** Double-click the `.exe`. If Windows says it protected your PC, click **More info**, then **Run anyway**. If there is no such button, or the file will not start: right-click the installer, open **Properties**, check **Unblock**, and run it again.
+Find the message on your screen, then do the step beside it.
 
-Or, in PowerShell, from the folder where you saved the installer (usually Downloads):
+| OS | What you see | What to do |
+|----|----------------|------------|
+| **Windows** | Windows protected your PC | Click **More info**, then **Run anyway**. If that button is missing, right-click the installer, open **Properties**, check **Unblock**, and run it again. |
+| **Mac** | The app cannot be opened because the developer cannot be verified | Drag the app to **Applications**. Control-click it and choose **Open**, then click **Open** again. If **Open** is missing, open **System Settings → Privacy & Security** (older Macs: **System Preferences → Security & Privacy**) and click **Open Anyway**. |
+| **Mac** | The app is damaged and can't be opened | Use the Mac Terminal commands below. |
+| **Linux** | The installer opens normally | No extra approval. |
+
+Those on-screen buttons move between versions of Windows and macOS. When you cannot find the button, paste the commands below. On Windows, close this app first, then paste in PowerShell from your Downloads folder. On a Mac, drag the app to Applications first, then paste in Terminal.
+
+**Windows**
 
 ```powershell
 Get-ChildItem .\ChrisCustomFLC-MultiOS-*-windows-setup.exe | Unblock-File
 Start-Process (Get-ChildItem .\ChrisCustomFLC-MultiOS-*-windows-setup.exe | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
 ```
 
-**macOS.** Open the `.dmg` and drag the app to **Applications**. Control-click the app in **Applications** and choose **Open**, then click **Open**. If that choice is missing: **System Settings → Privacy & Security** (older macOS: **System Preferences → Security & Privacy**), and use **Open Anyway** next to the block message.
-
-Or, in Terminal, after the app is in Applications:
+**Mac, after the app is in Applications**
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/Chris's Custom FLC MultiOS.app"
 open "/Applications/Chris's Custom FLC MultiOS.app"
 ```
 
-If macOS says the app is damaged, clear that and remove the download quarantine:
+**Mac, when it says the app is damaged**
 
 ```bash
 codesign --force --deep --sign - "/Applications/Chris's Custom FLC MultiOS.app"
