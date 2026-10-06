@@ -1,8 +1,54 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const {
+  isExplicitPromptGlowStrength,
+  isKnownPromptGlow,
+  normalizePromptGlowStrength,
+} = require('./center-prompts');
 
 const DEFAULT_SERVERS_PATH = path.join(__dirname, '..', 'data', 'servers.json');
+
+/** View-menu choices stored on a server profile. Missing keys mean the defaults. */
+const PROMPT_APPEARANCE_KEYS = [
+  'centerPrompts',
+  'promptHighlight',
+  'promptAutoRaise',
+  'promptGlow',
+  'promptGlowStrength',
+];
+
+/**
+ * Appearance fields worth copying onto another server profile.
+ * @param {object | null | undefined} source
+ * @returns {Record<string, unknown>}
+ */
+function pickPromptAppearance(source) {
+  /** @type {Record<string, unknown>} */
+  const out = {};
+  if (!source || typeof source !== 'object') return out;
+  if (typeof source.centerPrompts === 'boolean') out.centerPrompts = source.centerPrompts;
+  if (typeof source.promptHighlight === 'boolean') out.promptHighlight = source.promptHighlight;
+  if (typeof source.promptAutoRaise === 'boolean') out.promptAutoRaise = source.promptAutoRaise;
+  if (isKnownPromptGlow(source.promptGlow)) out.promptGlow = source.promptGlow;
+  if (isExplicitPromptGlowStrength(source.promptGlowStrength)) {
+    out.promptGlowStrength = normalizePromptGlowStrength(source.promptGlowStrength);
+  }
+  return out;
+}
+
+/**
+ * @param {import('./store').Server[]} servers
+ * @param {object | null | undefined} data
+ */
+function withClonedAppearance(servers, data) {
+  const incoming = data && typeof data === 'object' ? { ...data } : {};
+  const fromId = incoming.cloneFrom;
+  delete incoming.cloneFrom;
+  if (!fromId) return incoming;
+  const source = servers.find((server) => server.id === fromId);
+  return { ...pickPromptAppearance(source), ...incoming };
+}
 
 /**
  * @param {string} input
@@ -75,27 +121,45 @@ function ensureServersFile(filePath) {
  * @returns {import('./store').Server[]}
  */
 function addServer(servers, data) {
-  const url = normalizeUrl(data.url);
+  const incoming = withClonedAppearance(servers, data);
+  const url = normalizeUrl(incoming.url);
   const nextOrder =
-    data.order !== undefined
-      ? data.order
+    incoming.order !== undefined
+      ? incoming.order
       : servers.length === 0
         ? 0
         : Math.max(...servers.map((s) => s.order ?? 0)) + 1;
   const entry = {
     id: crypto.randomUUID(),
-    label: data.label ?? '',
+    label: incoming.label ?? '',
     url,
-    notes: data.notes ?? '',
+    notes: incoming.notes ?? '',
     order: nextOrder,
   };
-  if (data.username !== undefined && data.username !== '') {
-    entry.username = data.username;
+  if (incoming.username !== undefined && incoming.username !== '') {
+    entry.username = incoming.username;
   }
-  if (data.password !== undefined && data.password !== '') {
-    entry.password = data.password;
+  if (incoming.password !== undefined && incoming.password !== '') {
+    entry.password = incoming.password;
   }
-  entry.autoJoin = data.autoJoin === undefined ? true : Boolean(data.autoJoin);
+  entry.autoJoin = incoming.autoJoin === undefined ? true : Boolean(incoming.autoJoin);
+  // Absent means "center prompts on". Only an explicit choice is stored.
+  if (typeof incoming.centerPrompts === 'boolean') {
+    entry.centerPrompts = incoming.centerPrompts;
+  }
+  // Absent means the prompt highlight is on, the glow is blue, and strength is 100%.
+  if (typeof incoming.promptHighlight === 'boolean') {
+    entry.promptHighlight = incoming.promptHighlight;
+  }
+  if (typeof incoming.promptAutoRaise === 'boolean') {
+    entry.promptAutoRaise = incoming.promptAutoRaise;
+  }
+  if (isKnownPromptGlow(incoming.promptGlow)) {
+    entry.promptGlow = incoming.promptGlow;
+  }
+  if (isExplicitPromptGlowStrength(incoming.promptGlowStrength)) {
+    entry.promptGlowStrength = normalizePromptGlowStrength(incoming.promptGlowStrength);
+  }
   return [...servers, entry];
 }
 
@@ -155,6 +219,29 @@ function listServers(servers) {
   });
 }
 
+/**
+ * Drop prompt appearance back to the defaults (the keys are simply removed).
+ * @param {import('./store').Server[]} servers
+ * @param {string} id
+ * @returns {{ servers: import('./store').Server[], changed: boolean }}
+ */
+function clearPromptAppearance(servers, id) {
+  const index = servers.findIndex((server) => server.id === id);
+  if (index === -1) return { servers, changed: false };
+  const current = { ...servers[index] };
+  let changed = false;
+  for (const key of PROMPT_APPEARANCE_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(current, key)) {
+      delete current[key];
+      changed = true;
+    }
+  }
+  if (!changed) return { servers, changed: false };
+  const next = servers.slice();
+  next[index] = current;
+  return { servers: next, changed: true };
+}
+
 module.exports = {
   DEFAULT_SERVERS_PATH,
   normalizeUrl,
@@ -165,4 +252,6 @@ module.exports = {
   updateServer,
   deleteServer,
   listServers,
+  clearPromptAppearance,
+  pickPromptAppearance,
 };

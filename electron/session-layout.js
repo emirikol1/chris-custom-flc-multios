@@ -234,6 +234,12 @@ const POPOUT_MODULE_FN = `function getPopoutModule() {
       var M = (typeof PopoutModule !== 'undefined') ? PopoutModule : window.PopoutModule;
       return (M && M.singleton) ? M.singleton : null;
     } catch (e) { return null; }
+  }
+  function appIsPoppedOut(mod, app) {
+    if (!mod || !mod.poppedOut || typeof mod.poppedOut.has !== 'function' || !app) return false;
+    if (app.appId !== undefined && app.appId !== null && mod.poppedOut.has(app.appId)) return true;
+    if (app.id !== undefined && app.id !== null && mod.poppedOut.has(app.id)) return true;
+    return false;
   }`;
 
 /** Shared page-side helper: find a Foundry Application from a descriptor (async). */
@@ -283,12 +289,18 @@ const SNAPSHOT_LAYOUT_SCRIPT = `(function () {
     function push(app) {
       var d = describeApp(app);
       if (!d) return;
-      var appId = (app.appId !== undefined && app.appId !== null) ? app.appId : app.id;
-      var popped = !!(mod && mod.poppedOut && mod.poppedOut.has && mod.poppedOut.has(appId));
+      var popped = appIsPoppedOut(mod, app);
       var rendered = app.rendered === true || (app.element && (app.element.jquery ? app.element.length > 0 : true));
       if (!rendered && !popped) return;
       var key = d.kind + ':' + (d.uuid || d.tab || d.cls);
-      if (seen[key]) return;
+      if (seen[key]) {
+        if (!popped) return;
+        for (var i = 0; i < out.length; i++) {
+          var prev = out[i];
+          if (prev.kind + ':' + (prev.uuid || prev.tab || prev.cls) === key) prev.mode = 'popout';
+        }
+        return;
+      }
       seen[key] = true;
       var p = app.position || {};
       out.push({
@@ -310,6 +322,15 @@ const SNAPSHOT_LAYOUT_SCRIPT = `(function () {
         var wo = app && app.options && app.options.window;
         if (!wo || wo.frame === false || wo.positioned === false) continue;
         push(app);
+      }
+    }
+    if (mod && mod.poppedOut && typeof mod.poppedOut.values === 'function') {
+      var pit = mod.poppedOut.values();
+      for (var step = pit.next(); !step.done; step = pit.next()) {
+        var state = step.value;
+        if (!state || !state.app) continue;
+        if (state.window && state.window.closed) continue;
+        push(state.app);
       }
     }
     return out;
@@ -428,8 +449,7 @@ function buildRestoreScript(entry) {
     var res = await resolveApp(entry);
     if (!res.app) return { ok: false, reason: res.reason || 'not_found' };
     var app = res.app;
-    var appId = (app.appId !== undefined && app.appId !== null) ? app.appId : app.id;
-    if (entry.mode === 'popout' && mod.poppedOut && mod.poppedOut.has && mod.poppedOut.has(appId)) {
+    if (entry.mode === 'popout' && appIsPoppedOut(mod, app)) {
       return { ok: true, already: true };
     }
     if (!res.rendered) {
@@ -449,7 +469,7 @@ function buildRestoreScript(entry) {
     }
     if (entry.mode === 'popout') {
       mod.onPopoutClicked(app);
-      var ok = !!(mod.poppedOut && mod.poppedOut.has && mod.poppedOut.has(appId));
+      var ok = appIsPoppedOut(mod, app);
       return ok ? { ok: true } : { ok: false, reason: 'render_failed' };
     }
     var pos = {};

@@ -2,10 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AUTOLOGIN_ARMED_RESULT,
   AUTOLOGIN_POLL_MS,
+  AUTOLOGIN_SKIP_KEY,
   AUTOLOGIN_TIMEOUT_MS,
   MATCH_USER_OPTION_SOURCE,
   buildAutologinBody,
   buildAutologinScript,
+  buildLogoutIntentBody,
+  buildLogoutIntentScript,
+  isGamePageUrl,
   isJoinPageUrl,
   matchUserOption,
 } from '../electron/foundry-autologin.js';
@@ -13,8 +17,8 @@ import {
 const OPTIONS = [
   { value: '', text: '' },
   { value: 'u1', text: 'Gamemaster' },
-  { value: 'u2', text: 'Chris' },
-  { value: 'u3', text: 'Charlie' },
+  { value: 'u2', text: 'Quinn' },
+  { value: 'u3', text: 'Quincy' },
   { value: 'u4', text: '  Dana Scully ' },
 ];
 
@@ -23,20 +27,20 @@ const OPTIONS = [
 // ---------------------------------------------------------------------------
 describe('matchUserOption', () => {
   it('matches exact text', () => {
-    expect(matchUserOption(OPTIONS, 'Chris')).toBe('u2');
+    expect(matchUserOption(OPTIONS, 'Quinn')).toBe('u2');
   });
 
   it('matches case-insensitively and trims both sides', () => {
-    expect(matchUserOption(OPTIONS, '  cHrIs ')).toBe('u2');
+    expect(matchUserOption(OPTIONS, '  qUiNn ')).toBe('u2');
     expect(matchUserOption(OPTIONS, 'dana scully')).toBe('u4');
   });
 
   it('prefers exact over prefix when both exist', () => {
     const opts = [
-      { value: 'a', text: 'Chris Proctor' },
-      { value: 'b', text: 'Chris' },
+      { value: 'a', text: 'Quinn Harper' },
+      { value: 'b', text: 'Quinn' },
     ];
-    expect(matchUserOption(opts, 'chris')).toBe('b');
+    expect(matchUserOption(opts, 'quinn')).toBe('b');
   });
 
   it('falls back to a unique prefix match', () => {
@@ -45,8 +49,8 @@ describe('matchUserOption', () => {
   });
 
   it('returns null for an ambiguous prefix', () => {
-    // "ch" matches both Chris and Charlie
-    expect(matchUserOption(OPTIONS, 'ch')).toBeNull();
+    // "qu" matches both Quinn and Quincy
+    expect(matchUserOption(OPTIONS, 'qu')).toBeNull();
   });
 
   it('ignores the blank placeholder option', () => {
@@ -56,8 +60,8 @@ describe('matchUserOption', () => {
   });
 
   it('returns null with no options or bad input', () => {
-    expect(matchUserOption([], 'Chris')).toBeNull();
-    expect(matchUserOption(undefined, 'Chris')).toBeNull();
+    expect(matchUserOption([], 'Quinn')).toBeNull();
+    expect(matchUserOption(undefined, 'Quinn')).toBeNull();
     expect(matchUserOption(OPTIONS, undefined)).toBeNull();
     expect(matchUserOption(OPTIONS, 'Nobody')).toBeNull();
   });
@@ -79,10 +83,10 @@ describe('inlined matchUserOption', () => {
   });
 
   it.each([
-    ['Chris', 'u2'],
-    ['  cHrIs ', 'u2'],
+    ['Quinn', 'u2'],
+    ['  qUiNn ', 'u2'],
     ['game', 'u1'],
-    ['ch', null],
+    ['qu', null],
     ['', null],
     ['Nobody', null],
     ['dana', 'u4'],
@@ -101,14 +105,14 @@ describe('inlined matchUserOption', () => {
 // ---------------------------------------------------------------------------
 describe('buildAutologinScript', () => {
   it('returns an IIFE string that parses', () => {
-    const script = buildAutologinScript({ username: 'Chris', password: 'hunter2' });
+    const script = buildAutologinScript({ username: 'Quinn', password: 'hunter2' });
     expect(script.startsWith('(function (window, document) {')).toBe(true);
     expect(script.trimEnd().endsWith('})(window, document);')).toBe(true);
     expect(() => new Function(script)).not.toThrow();
   });
 
   it('embeds credentials only as one JSON literal', () => {
-    const username = 'Chris';
+    const username = 'Quinn';
     const password = 'p@ss"word';
     const script = buildAutologinScript({ username, password });
     const literal = JSON.stringify({ username, password });
@@ -209,6 +213,21 @@ class FakeEvent {
   }
 }
 
+function makeSessionStorage(initial = {}) {
+  const data = { ...initial };
+  return {
+    getItem(key) {
+      return Object.prototype.hasOwnProperty.call(data, key) ? data[key] : null;
+    },
+    setItem(key, value) {
+      data[key] = String(value);
+    },
+    removeItem(key) {
+      delete data[key];
+    },
+  };
+}
+
 function makeFakeWindow({ withStatus = true, withObserver = false } = {}) {
   const statuses = [];
   const win = {
@@ -242,7 +261,7 @@ function makeFakeWindow({ withStatus = true, withObserver = false } = {}) {
   return win;
 }
 
-function run(win, doc, creds = { username: 'Chris', password: 'hunter2' }) {
+function run(win, doc, creds = { username: 'Quinn', password: 'hunter2' }) {
   const body = buildAutologinBody(creds);
   const fn = new Function('window', 'document', body);
   return fn(win, doc);
@@ -306,7 +325,7 @@ describe('injected autologin body', () => {
   it('reports matched:false on an ambiguous prefix', () => {
     const win = makeFakeWindow();
     const dom = makeFakeDom();
-    run(win, dom.document, { username: 'ch', password: 'x' });
+    run(win, dom.document, { username: 'qu', password: 'x' });
     expect(win.statuses).toEqual([{ matched: false, userCount: OPTIONS.length }]);
   });
 
@@ -451,16 +470,160 @@ describe('injected autologin body', () => {
   it('never leaks the password into the status report', () => {
     const win = makeFakeWindow();
     const dom = makeFakeDom();
-    run(win, dom.document, { username: 'Chris', password: 'hunter2' });
+    run(win, dom.document, { username: 'Quinn', password: 'hunter2' });
     const serialized = JSON.stringify(win.statuses);
     expect(serialized).not.toContain('hunter2');
-    expect(serialized).not.toContain('Chris');
+    expect(serialized).not.toContain('Quinn');
+  });
+
+  it('does not submit when the user intentionally logged out', () => {
+    const win = makeFakeWindow();
+    win.sessionStorage = makeSessionStorage({ [AUTOLOGIN_SKIP_KEY]: '1' });
+    const dom = makeFakeDom();
+
+    const result = run(win, dom.document);
+
+    expect(result).toBe(AUTOLOGIN_ARMED_RESULT);
+    expect(dom.button.clicks).toBe(0);
+    expect(dom.select.value).toBe('');
+    expect(dom.password.value).toBe('');
+    expect(win.__flcAutologinDone).toBe(true);
+    expect(win.statuses).toEqual([{ skipped: 'logout' }]);
+    expect(win.sessionStorage.getItem(AUTOLOGIN_SKIP_KEY)).toBe('1');
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 
 // ---------------------------------------------------------------------------
 // isJoinPageUrl
 // ---------------------------------------------------------------------------
+function runLogout(win, doc) {
+  const body = buildLogoutIntentBody();
+  const fn = new Function('window', 'document', body);
+  return fn(win, doc);
+}
+
+describe('logout intent marker', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('builds a script that parses and does not touch credentials or location', () => {
+    const script = buildLogoutIntentScript();
+    expect(script.startsWith('(function (window, document) {')).toBe(true);
+    expect(() => new Function(script)).not.toThrow();
+    expect(script).not.toMatch(/\blocation\b/);
+    expect(script).not.toMatch(/password|username|console\./);
+    expect(script).toContain(JSON.stringify(AUTOLOGIN_SKIP_KEY));
+  });
+
+  it('clears a previous logout when the game page arms, then records the next logOut', () => {
+    const calls = [];
+    const win = {
+      sessionStorage: makeSessionStorage({ [AUTOLOGIN_SKIP_KEY]: '1' }),
+      setInterval: (...args) => setInterval(...args),
+      clearInterval: (...args) => clearInterval(...args),
+      game: {
+        logOut(...args) {
+          calls.push(args);
+          return 'left';
+        },
+      },
+    };
+    const doc = { addEventListener() {} };
+
+    runLogout(win, doc);
+    expect(win.sessionStorage.getItem(AUTOLOGIN_SKIP_KEY)).toBeNull();
+
+    const result = win.game.logOut('user');
+    expect(result).toBe('left');
+    expect(calls).toEqual([['user']]);
+    expect(win.sessionStorage.getItem(AUTOLOGIN_SKIP_KEY)).toBe('1');
+  });
+
+  it('records a click on the logout control before Foundry handles it', () => {
+    const win = {
+      sessionStorage: makeSessionStorage(),
+      setInterval: (...args) => setInterval(...args),
+      clearInterval: (...args) => clearInterval(...args),
+      game: { logOut() {} },
+    };
+    let click = null;
+    const doc = {
+      addEventListener(type, fn, capture) {
+        if (type === 'click') click = { fn, capture };
+      },
+    };
+    const icon = {
+      closest(sel) {
+        return String(sel).includes('[data-action="logout"]') ? icon : null;
+      },
+    };
+
+    runLogout(win, doc);
+    expect(click.capture).toBe(true);
+    click.fn({ target: icon });
+    expect(win.sessionStorage.getItem(AUTOLOGIN_SKIP_KEY)).toBe('1');
+
+    win.sessionStorage.removeItem(AUTOLOGIN_SKIP_KEY);
+    click.fn({ target: { closest() { return null; } } });
+    expect(win.sessionStorage.getItem(AUTOLOGIN_SKIP_KEY)).toBeNull();
+  });
+
+  it('does not clear a logout that happened before a second inject on the same page', () => {
+    const win = {
+      sessionStorage: makeSessionStorage(),
+      setInterval: (...args) => setInterval(...args),
+      clearInterval: (...args) => clearInterval(...args),
+      game: { logOut() {} },
+    };
+    const doc = { addEventListener() {} };
+
+    runLogout(win, doc);
+    win.game.logOut();
+    runLogout(win, doc);
+
+    expect(win.sessionStorage.getItem(AUTOLOGIN_SKIP_KEY)).toBe('1');
+  });
+
+  it('waits until game.logOut exists, then stops polling', () => {
+    const win = {
+      sessionStorage: makeSessionStorage(),
+      setInterval: (...args) => setInterval(...args),
+      clearInterval: (...args) => clearInterval(...args),
+    };
+    runLogout(win, { addEventListener() {} });
+    expect(vi.getTimerCount()).toBe(1);
+
+    win.game = { logOut() { return 'ok'; } };
+    vi.advanceTimersByTime(250);
+    expect(win.game.logOut()).toBe('ok');
+    expect(win.sessionStorage.getItem(AUTOLOGIN_SKIP_KEY)).toBe('1');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('isGamePageUrl', () => {
+  it.each([
+    ['http://localhost:30000/game', true],
+    ['https://foundry.example.com/game/', true],
+    ['https://example.com/foundry/game', true],
+    ['https://example.com/game?x=1#y', true],
+    ['https://example.com/join', false],
+    ['https://example.com/gameplay', false],
+    ['https://example.com/game/extra', false],
+    ['https://example.com/', false],
+    ['not a url', false],
+    ['', false],
+    [null, false],
+  ])('%j → %s', (input, expected) => {
+    expect(isGamePageUrl(input)).toBe(expected);
+  });
+});
+
 describe('isJoinPageUrl', () => {
   it.each([
     ['http://localhost:30000/join', true],

@@ -1,9 +1,21 @@
 const path = require('path');
-const { BrowserWindow, session, app, ipcMain, screen } = require('electron');
+const { BrowserWindow, Menu, session, app, ipcMain, screen } = require('electron');
 const { readGpuPrefs, writeGpuPrefs } = require('./gpu-prefs');
 const { redactForLog } = require('./log-redact');
 const { logInfo, logWarn, logError } = require('./logger');
 const { buildAutologinScript, isJoinPageUrl } = require('./foundry-autologin');
+const {
+  buildCenterPromptsScript,
+  centerPromptsEnabled,
+  normalizePromptGlow,
+  normalizePromptGlowStrength,
+  promptAutoRaiseEnabled,
+  promptHighlightEnabled,
+} = require('./center-prompts');
+const { gameWindowMenuTemplate } = require('./game-menu');
+const { askGlowStrength } = require('./glow-strength-prompt');
+const { driftedOntoOtherWindow, holdBounds, scheduleUnbury, unburyWindow } = require('./unbury-window');
+const { requestUserAttention } = require('./os-attention');
 const {
   sanitizeDescriptor,
   descriptorKey,
@@ -29,6 +41,20 @@ const gameWindowsById = new Map();
 const liveGameWindows = new Set();
 /** @type {WeakMap<import('electron').WebContents, { username: string, label: string }>} */
 const autologinContextByWebContents = new WeakMap();
+/** @type {WeakMap<import('electron').BrowserWindow, boolean>} */
+const centerPromptsByWin = new WeakMap();
+/** @type {WeakMap<import('electron').BrowserWindow, boolean>} */
+const promptHighlightByWin = new WeakMap();
+/** @type {WeakMap<import('electron').BrowserWindow, string>} */
+const promptGlowByWin = new WeakMap();
+/** @type {WeakMap<import('electron').BrowserWindow, number>} */
+const promptGlowStrengthByWin = new WeakMap();
+/** @type {WeakMap<import('electron').BrowserWindow, boolean>} */
+const promptAutoRaiseByWin = new WeakMap();
+/** @type {WeakMap<import('electron').BrowserWindow, string>} */
+const serverIdByWin = new WeakMap();
+/** @type {WeakMap<import('electron').BrowserWindow, () => void>} */
+const unburyCancelByWin = new WeakMap();
 
 /**
  * Integration points supplied by main.js so this module stays free of
@@ -38,6 +64,12 @@ const autologinContextByWebContents = new WeakMap();
  *   isMudEnabled: () => boolean,
  *   buildCaptureScript: (() => string) | null,
  *   onGameWindowOpened: ((win: import('electron').BrowserWindow, info: { layoutKey: string, sessionScoped: boolean }) => void) | null,
+ *   setCenterPrompts: ((serverId: string, enabled: boolean) => void) | null,
+ *   setPromptHighlight: ((serverId: string, enabled: boolean) => void) | null,
+ *   setPromptAutoRaise: ((serverId: string, enabled: boolean) => void) | null,
+ *   setPromptGlow: ((serverId: string, glow: string) => void) | null,
+ *   setPromptGlowStrength: ((serverId: string, strength: number) => void) | null,
+ *   forgetPromptAppearance: ((serverId: string) => boolean) | null,
  * }}
  */
 const deps = {
@@ -45,6 +77,12 @@ const deps = {
   isMudEnabled: () => false,
   buildCaptureScript: null,
   onGameWindowOpened: null,
+  setCenterPrompts: null,
+  setPromptHighlight: null,
+  setPromptAutoRaise: null,
+  setPromptGlow: null,
+  setPromptGlowStrength: null,
+  forgetPromptAppearance: null,
 };
 
 const GAME_PRELOAD = path.join(__dirname, 'preload-game.js');
@@ -195,6 +233,139 @@ async function maybeAutologin(win, creds) {
   } catch {
     logWarn('[game-window] autologin inject failed');
   }
+}
+
+/**
+ * @param {import('electron').BrowserWindow} win
+ */
+function installGameMenu(win) {
+  if (!win || win.isDestroyed()) return;
+  const enabled = centerPromptsByWin.get(win) !== false;
+  const menu = Menu.buildFromTemplate(gameWindowMenuTemplate({
+    centerPrompts: enabled,
+    promptHighlight: promptHighlightByWin.get(win) !== false,
+    promptAutoRaise: promptAutoRaiseByWin.get(win) !== false,
+    promptGlow: promptGlowByWin.get(win) || 'blue',
+    promptGlowStrength: promptGlowStrengthByWin.get(win),
+    onToggleCenterPrompts: (next) => {
+      setWindowCenterPrompts(win, next);
+    },
+    onTogglePromptHighlight: (next) => {
+      setWindowPromptHighlight(win, next);
+    },
+    onTogglePromptAutoRaise: (next) => {
+      setWindowPromptAutoRaise(win, next);
+    },
+    onPickPromptGlow: (glow) => {
+      setWindowPromptGlow(win, glow);
+    },
+    onPickPromptGlowStrength: () => {
+      choosePromptGlowStrength(win);
+    },
+  }));
+  win.setMenu(menu);
+}
+
+/**
+ * @param {import('electron').BrowserWindow} win
+ * @param {boolean} enabled
+ */
+function setWindowCenterPrompts(win, enabled) {
+  const on = enabled === true;
+  centerPromptsByWin.set(win, on);
+  const serverId = serverIdByWin.get(win);
+  if (serverId && typeof deps.setCenterPrompts === 'function') {
+    deps.setCenterPrompts(serverId, on);
+  }
+  installGameMenu(win);
+  applyCenterPrompts(win);
+}
+
+function setWindowPromptHighlight(win, enabled) {
+  const on = enabled === true;
+  promptHighlightByWin.set(win, on);
+  const serverId = serverIdByWin.get(win);
+  if (serverId && typeof deps.setPromptHighlight === 'function') {
+    deps.setPromptHighlight(serverId, on);
+  }
+  installGameMenu(win);
+  applyCenterPrompts(win);
+}
+
+/**
+ * @param {import('electron').BrowserWindow} win
+ * @param {boolean} enabled
+ */
+function setWindowPromptAutoRaise(win, enabled) {
+  const on = enabled === true;
+  promptAutoRaiseByWin.set(win, on);
+  const serverId = serverIdByWin.get(win);
+  if (serverId && typeof deps.setPromptAutoRaise === 'function') {
+    deps.setPromptAutoRaise(serverId, on);
+  }
+  installGameMenu(win);
+}
+
+/**
+ * @param {import('electron').BrowserWindow} win
+ * @param {string} glow
+ */
+function setWindowPromptGlow(win, glow) {
+  const id = normalizePromptGlow(glow);
+  promptGlowByWin.set(win, id);
+  const serverId = serverIdByWin.get(win);
+  if (serverId && typeof deps.setPromptGlow === 'function') {
+    deps.setPromptGlow(serverId, id);
+  }
+  installGameMenu(win);
+  applyCenterPrompts(win);
+}
+
+/**
+ * @param {import('electron').BrowserWindow} win
+ * @param {number} strength
+ */
+function setWindowPromptGlowStrength(win, strength) {
+  const n = normalizePromptGlowStrength(strength);
+  promptGlowStrengthByWin.set(win, n);
+  const serverId = serverIdByWin.get(win);
+  if (serverId && typeof deps.setPromptGlowStrength === 'function') {
+    deps.setPromptGlowStrength(serverId, n);
+  }
+  installGameMenu(win);
+  applyCenterPrompts(win);
+}
+
+/**
+ * @param {import('electron').BrowserWindow} win
+ */
+function choosePromptGlowStrength(win) {
+  const current = normalizePromptGlowStrength(promptGlowStrengthByWin.get(win));
+  askGlowStrength(win, current).then((next) => {
+    if (next == null || win.isDestroyed()) return;
+    setWindowPromptGlowStrength(win, next);
+  }).catch(() => {
+    logWarn('[game-window] glow strength prompt failed');
+  });
+}
+
+async function applyCenterPrompts(win) {
+  if (!win || win.isDestroyed()) return;
+  const enabled = centerPromptsByWin.get(win) !== false;
+  const highlight = promptHighlightByWin.get(win) !== false;
+  const glow = normalizePromptGlow(promptGlowByWin.get(win));
+  const strength = normalizePromptGlowStrength(promptGlowStrengthByWin.get(win));
+  try {
+    await win.webContents.executeJavaScript(buildCenterPromptsScript(enabled, highlight, glow, strength));
+  } catch {
+    logWarn('[game-window] center prompts inject failed');
+  }
+}
+
+function cancelUnbury(win) {
+  const cancel = unburyCancelByWin.get(win);
+  if (typeof cancel === 'function') cancel();
+  unburyCancelByWin.delete(win);
 }
 
 /**
@@ -357,18 +528,68 @@ function stopSnapshotLoop(ctx) {
   }
 }
 
+function savedPopoutPoints(layoutKey) {
+  if (!deps.windowState) return [];
+  const points = [];
+  for (const entry of readLayout(deps.windowState.get(layoutRecordKey(layoutKey)))) {
+    if (!entry || entry.mode !== 'popout') continue;
+    const saved = deps.windowState.get(popoutBoundsKey(layoutKey, entry));
+    if (saved && typeof saved === 'object') points.push(saved);
+  }
+  return points;
+}
+
+/**
+ * If the game window has landed on a saved popout, put it back on its own spot.
+ * @param {import('electron').BrowserWindow} win
+ * @param {LayoutCtx} ctx
+ */
+function keepGameWindowHome(win, ctx) {
+  const home = ctx && ctx.homeBounds;
+  if (!home || !win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) return;
+  if (typeof win.getBounds !== 'function' || typeof win.setBounds !== 'function') return;
+  let here;
+  try {
+    here = win.getBounds();
+  } catch {
+    return;
+  }
+  if (!driftedOntoOtherWindow(here, home, savedPopoutPoints(ctx.layoutKey))) return;
+  try {
+    win.setBounds(home);
+  } catch {
+    return;
+  }
+  logInfo('[game-window] restored game window position');
+}
+
 /**
  * Apply saved bounds for `key` to a popout window, if any are stored.
+ * Putting the popout in place must not drag the game window with it.
+ * @param {import('electron').BrowserWindow | null | undefined} parent
  * @param {import('electron').BrowserWindow} child
  * @param {string} key
  */
-function applySavedPopoutBounds(child, key) {
-  if (!deps.windowState || child.isDestroyed()) return;
-  if (!deps.windowState.has(key)) return;
+function applySavedPopoutBounds(parent, child, key) {
+  const restoreParent = holdBounds(parent);
+  if (!deps.windowState || child.isDestroyed()) {
+    restoreParent();
+    return;
+  }
+  if (!deps.windowState.has(key)) {
+    restoreParent();
+    return;
+  }
   const requested = child.getBounds();
   const bounds = deps.windowState.restore(key, { width: requested.width, height: requested.height });
   if (bounds.width && bounds.height) child.setSize(bounds.width, bounds.height);
   if (Number.isFinite(bounds.x) && Number.isFinite(bounds.y)) child.setPosition(bounds.x, bounds.y);
+  restoreParent();
+  const ctx = parent && layoutCtxByWebContents.get(parent.webContents);
+  if (ctx) {
+    keepGameWindowHome(parent, ctx);
+    setTimeout(() => keepGameWindowHome(parent, ctx), 200);
+  }
 }
 
 /**
@@ -430,7 +651,7 @@ async function identifyPopout(parent, child, entry, ctx) {
       const same = entry.desc && descriptorKey(entry.desc) === descriptorKey(desc);
       const hadSaved = Boolean(deps.windowState && deps.windowState.has(key));
       if (!entry.boundsApplied) {
-        applySavedPopoutBounds(child, key);
+        applySavedPopoutBounds(parent, child, key);
         entry.boundsApplied = true;
       }
       if (!same) trackPopoutAs(child, entry, key);
@@ -443,7 +664,7 @@ async function identifyPopout(parent, child, entry, ctx) {
   }
   // Not a PopOut! window (plain window.open): fall back to the slot's memory.
   if (!child.isDestroyed() && !entry.boundsApplied) {
-    applySavedPopoutBounds(child, entry.key);
+    applySavedPopoutBounds(parent, child, entry.key);
     entry.boundsApplied = true;
   }
 }
@@ -603,6 +824,7 @@ async function restoreSessionLayout(win, ctx) {
     ctx.restoreDone = true;
   }
   if (!win.isDestroyed()) {
+    keepGameWindowHome(win, ctx);
     armPageHideSnapshot(win);
     startSnapshotLoop(win, ctx);
   }
@@ -666,7 +888,7 @@ function enablePopouts(parent, gameSession, ctx) {
     logInfo('[game-window] popout opened', { slot, restored: Boolean(expected) });
     if (deps.windowState) {
       if (expected) {
-        applySavedPopoutBounds(child, entry.key);
+        applySavedPopoutBounds(parent, child, entry.key);
         entry.boundsApplied = true;
       }
       entry.untrack = deps.windowState.track(child, entry.key);
@@ -729,22 +951,47 @@ function popoutSlotKey(layoutKey, slot) {
  * @returns {number} records removed
  */
 function forgetSessionLayout(serverId) {
-  if (!deps.windowState || !serverId) return 0;
-  const layoutKey = sessionLayoutKey(serverId, false);
-  const live = layoutCtxByKey.get(layoutKey);
-  if (live) {
-    // Don't let a connected window immediately re-save what was just forgotten.
-    live.snapshotsSuspended = true;
-    stopSnapshotLoop(live);
-    live.lastSaved = '';
+  if (!serverId) return 0;
+  let removed = 0;
+  if (deps.windowState) {
+    const layoutKey = sessionLayoutKey(serverId, false);
+    const live = layoutCtxByKey.get(layoutKey);
+    if (live) {
+      // Don't let a connected window immediately re-save what was just forgotten.
+      live.snapshotsSuspended = true;
+      stopSnapshotLoop(live);
+      live.lastSaved = '';
+    }
+    removed = deps.windowState.forgetPrefix(layoutKey);
   }
-  const removed = deps.windowState.forgetPrefix(layoutKey);
-  logInfo('[game-window] session layout forgotten', { removed, live: Boolean(live) });
+  if (typeof deps.forgetPromptAppearance === 'function') {
+    deps.forgetPromptAppearance(serverId);
+  }
+  resetLivePromptAppearance(serverId);
+  logInfo('[game-window] session layout forgotten', { removed });
   return removed;
 }
 
 /**
- * @param {{ id?: string, url: string, label?: string, incognito?: boolean, autoJoin?: boolean, username?: string, password?: string }} payload
+ * Put a connected game window back on the default prompt appearance.
+ * @param {string} serverId
+ */
+function resetLivePromptAppearance(serverId) {
+  for (const win of liveGameWindows) {
+    if (!win || win.isDestroyed()) continue;
+    if (serverIdByWin.get(win) !== serverId) continue;
+    centerPromptsByWin.set(win, true);
+    promptHighlightByWin.set(win, true);
+    promptAutoRaiseByWin.set(win, true);
+    promptGlowByWin.set(win, 'blue');
+    promptGlowStrengthByWin.set(win, 100);
+    installGameMenu(win);
+    applyCenterPrompts(win);
+  }
+}
+
+/**
+ * @param {{ id?: string, url: string, label?: string, incognito?: boolean, autoJoin?: boolean, username?: string, password?: string, centerPrompts?: boolean, promptHighlight?: boolean, promptAutoRaise?: boolean, promptGlow?: string, promptGlowStrength?: number }} payload
  * @param {string} gpuPrefsPath
  * @returns {Promise<void>}
  */
@@ -822,12 +1069,16 @@ function openGameWindow(payload, gpuPrefsPath) {
   });
 
   const ctx = createLayoutCtx(layoutKey);
+  ctx.homeBounds = Number.isFinite(bounds.x) && Number.isFinite(bounds.y)
+    ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }
+    : null;
   layoutCtxByWebContents.set(win.webContents, ctx);
   if (ctx.sessionScoped) layoutCtxByKey.set(layoutKey, ctx);
 
   // Save on close/exit: hold the close briefly for a final in-page snapshot,
   // then flush popout bounds and let the window go.
   win.on('close', (event) => {
+    cancelUnbury(win);
     ctx.parentClosing = true;
     stopSnapshotLoop(ctx);
     if (ctx.closeFlushed) return;
@@ -858,6 +1109,17 @@ function openGameWindow(payload, gpuPrefsPath) {
   if (id) {
     gameWindowsById.set(id, win);
   }
+
+  serverIdByWin.set(win, id || '');
+  centerPromptsByWin.set(win, centerPromptsEnabled(payload.centerPrompts));
+  promptHighlightByWin.set(win, promptHighlightEnabled(payload.promptHighlight));
+  promptAutoRaiseByWin.set(win, promptAutoRaiseEnabled(payload.promptAutoRaise));
+  promptGlowByWin.set(win, normalizePromptGlow(payload.promptGlow));
+  promptGlowStrengthByWin.set(win, normalizePromptGlowStrength(payload.promptGlowStrength));
+  installGameMenu(win);
+  unburyCancelByWin.set(win, scheduleUnbury(win, undefined, () => keepGameWindowHome(win, ctx)));
+  setTimeout(() => keepGameWindowHome(win, ctx), 0);
+  setTimeout(() => keepGameWindowHome(win, ctx), 500);
 
   enablePopouts(win, gameSession, ctx);
 
@@ -897,6 +1159,7 @@ function openGameWindow(payload, gpuPrefsPath) {
     }
 
     await maybeAutologin(win, creds);
+    await applyCenterPrompts(win);
     await injectCapture(win);
     restoreSessionLayout(win, ctx).catch(() => {});
   });
@@ -948,6 +1211,33 @@ function hasLiveGameWindows() {
 }
 
 /**
+ * The OS window that contains the prompt, plus the game window that owns the setting.
+ * @param {import('electron').WebContents} contents
+ * @returns {{ surface: import('electron').BrowserWindow, host: import('electron').BrowserWindow } | null}
+ */
+function windowForPrompt(contents) {
+  const win = BrowserWindow.fromWebContents(contents);
+  if (!win) return null;
+  if (liveGameWindows.has(win)) return { surface: win, host: win };
+  for (const parent of liveGameWindows) {
+    const ctx = layoutCtxByWebContents.get(parent.webContents);
+    if (ctx && ctx.popouts.has(win)) return { surface: win, host: parent };
+  }
+  return null;
+}
+
+/**
+ * @param {import('electron').BrowserWindow} win
+ * @returns {boolean}
+ */
+function promptNeedsRaise(win) {
+  if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) return false;
+  if (typeof win.isMinimized === 'function' && win.isMinimized()) return true;
+  if (typeof win.isFocused === 'function' && win.isFocused()) return false;
+  return true;
+}
+
+/**
  * @param {string} gpuPrefsPath
  * @param {Partial<typeof deps>} [integration]
  */
@@ -964,6 +1254,18 @@ function registerGameIpc(gpuPrefsPath, integration) {
   ipcMain.on('foundry:layout-snapshot', (event, raw) => {
     const ctx = layoutCtxByWebContents.get(event.sender);
     if (ctx) saveLayoutSnapshot(ctx, raw);
+  });
+
+  // A short-lived Foundry prompt opened. Raise that window, or flash it when auto-raise is off.
+  ipcMain.on('foundry:prompt-attention', (event) => {
+    const found = windowForPrompt(event.sender);
+    if (!found) return;
+    if (promptAutoRaiseByWin.get(found.host) !== false) {
+      if (!promptNeedsRaise(found.surface)) return;
+      if (unburyWindow(found.surface)) logInfo('[game-window] prompt raised');
+      return;
+    }
+    if (requestUserAttention(found.surface)) logInfo('[game-window] user attention');
   });
 
   ipcMain.handle('game:get-webgl-status', () => {

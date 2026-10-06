@@ -42,7 +42,7 @@ describe('sanitizeChatLine', () => {
   it('returns null for narrator echoes so they are not re-narrated', () => {
     expect(
       sanitizeChatLine({
-        speaker: 'Chris',
+        speaker: 'Quinn',
         text: `${FOUNDRY_MUD_PREFIX} MASSACRE`,
         className: 'chat-message ic',
       }),

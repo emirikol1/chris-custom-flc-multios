@@ -162,7 +162,7 @@
           <button type="button" class="btn btn-primary btn-sm" data-action="connect">Connect</button>
           <button type="button" class="btn btn-secondary btn-sm" data-action="edit">Edit</button>
           <button type="button" class="btn btn-secondary btn-sm" data-action="clone" title="New server configuration pre-filled from this one">Clone</button>
-          <button type="button" class="btn btn-ghost btn-sm" data-action="forget-layout" title="Forget this session's remembered screen layout (window sizes, positions, open sheets and popouts). Use if a bad layout blocks connecting.">Forget layout</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-action="forget-layout" title="Forget this session's screen layout and prompt appearance. Next connection uses the defaults.">Forget layout</button>
           <button type="button" class="btn btn-danger btn-sm" data-action="delete">Delete</button>
         </div>
       `;
@@ -213,11 +213,9 @@
     if (typeof forget !== "function") return;
     try {
       const result = await forget(server.id);
-      const n = result && typeof result.removed === "number" ? result.removed : 0;
+      if (result == null) return;
       showNotification(
-        n > 0
-          ? `Forgot the screen layout for "${server.label}". Next connection starts fresh.`
-          : `No remembered layout for "${server.label}".`,
+        `Forgot the screen layout and prompt appearance for "${server.label}". Next connection uses the defaults.`,
         "info"
       );
     } catch (err) {
@@ -259,6 +257,11 @@
         label: server.label,
         incognito,
         autoJoin: server.autoJoin !== false,
+        centerPrompts: server.centerPrompts !== false,
+        promptHighlight: server.promptHighlight !== false,
+        promptAutoRaise: server.promptAutoRaise !== false,
+        promptGlow: server.promptGlow,
+        promptGlowStrength: server.promptGlowStrength,
         username: server.username || undefined,
         password: server.password || undefined,
       });

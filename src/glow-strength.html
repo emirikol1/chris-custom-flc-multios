@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Glow Strength</title>
+  <style>
+    body {
+      margin: 0;
+      font: 14px sans-serif;
+      background: #f4f4f4;
+      color: #1a1a1a;
+    }
+    form { padding: 16px 18px 14px; }
+    label { display: block; margin-bottom: 8px; }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      font: inherit;
+      padding: 6px 8px;
+    }
+    p { min-height: 1.2em; margin: 8px 0 0; color: #9b1212; }
+    .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+    button { font: inherit; padding: 6px 12px; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #1e1e1e; color: #f2f2f2; }
+      input { background: #111; color: #f2f2f2; border: 1px solid #666; }
+    }
+  </style>
+</head>
+<body>
+  <form id="form">
+    <label for="pct">Glow strength, as a percent of the normal size (0–300)</label>
+    <input id="pct" type="number" min="0" max="300" step="1" value="100" required>
+    <p id="error" role="alert"></p>
+    <div class="actions">
+      <button type="button" id="cancel">Cancel</button>
+      <button type="submit" id="ok">OK</button>
+    </div>
+  </form>
+  <script>
+    const input = document.getElementById('pct');
+    const error = document.getElementById('error');
+    input.focus();
+    input.select();
+    document.getElementById('cancel').addEventListener('click', () => {
+      if (window.flcGlowStrength) window.flcGlowStrength.cancel();
+    });
+    document.getElementById('form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const n = Number(input.value);
+      if (!Number.isInteger(n) || n < 0 || n > 300) {
+        error.textContent = 'Enter a whole number from 0 to 300.';
+        input.focus();
+        return;
+      }
+      error.textContent = '';
+      if (window.flcGlowStrength) window.flcGlowStrength.submit(n);
+    });
+  </script>
+</body>
+</html>

@@ -267,8 +267,7 @@ describe('createWindowStateStore', () => {
     expect(readStates(tmp.filePath)).toEqual({
       main: { x: 30, y: 40, width: 900, height: 700, maximized: false },
     });
-    expect(win.getNormalBounds).toHaveBeenCalledTimes(1);
-    expect(win.getBounds).not.toHaveBeenCalled();
+    expect(win.getNormalBounds).toHaveBeenCalledTimes(2);
     untrack();
   });
 
@@ -282,10 +281,10 @@ describe('createWindowStateStore', () => {
     expect(readStates(tmp.filePath)).toEqual({
       main: { x: 5, y: 6, width: 640, height: 480, maximized: false },
     });
-    expect(win.getNormalBounds).toHaveBeenCalledTimes(1);
+    expect(win.getNormalBounds).toHaveBeenCalledTimes(2);
 
     vi.advanceTimersByTime(SAVE_DEBOUNCE_MS * 2);
-    expect(win.getNormalBounds).toHaveBeenCalledTimes(1);
+    expect(win.getNormalBounds).toHaveBeenCalledTimes(2);
   });
 
   it('track() records maximized=true and preserves prior normal bounds', () => {

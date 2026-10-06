@@ -13,7 +13,7 @@ const SERVER_A = {
   url: 'https://alpha.example/',
   notes: '',
   order: 0,
-  username: 'Chris',
+  username: 'Quinn',
   autoJoin: true,
 };
 
@@ -103,7 +103,7 @@ describe('mergeServers', () => {
     const a = res.servers.find((s) => s.id === 'a');
     expect(a.label).toBe('Alpha renamed');
     expect(a.password).toBe('pw');
-    expect(a.username).toBe('Chris');
+    expect(a.username).toBe('Quinn');
     const b = res.servers.find((s) => s.id === 'b');
     expect(b.label).toBe('Beta again');
     expect(b.username).toBe('Bob');
@@ -111,6 +111,31 @@ describe('mergeServers', () => {
     expect(g.id).toBeTruthy();
     expect(g.autoJoin).toBe(false);
     expect(g.order).toBe(2);
+  });
+
+  it('keeps an explicit centerPrompts false and does not invent one', () => {
+    const existing = [{ id: 'a', label: 'A', url: 'https://a.example/', order: 0 }];
+    const res = mergeServers(existing, [
+      { id: 'a', url: 'https://a.example/', label: 'A', centerPrompts: false },
+      { label: 'New', url: 'https://n.example/' },
+    ]);
+    expect(res.servers.find((s) => s.id === 'a').centerPrompts).toBe(false);
+    expect(res.servers.find((s) => s.label === 'New').centerPrompts).toBeUndefined();
+  });
+
+  it('keeps an explicit prompt glow and does not invent one', () => {
+    const existing = [{ id: 'a', label: 'A', url: 'https://a.example/', order: 0 }];
+    const res = mergeServers(existing, [
+      { id: 'a', url: 'https://a.example/', label: 'A', promptHighlight: false, promptAutoRaise: false, promptGlow: 'green', promptGlowStrength: 150 },
+      { label: 'New', url: 'https://n.example/', promptGlow: 'chartreuse' },
+    ]);
+    expect(res.servers.find((s) => s.id === 'a').promptHighlight).toBe(false);
+    expect(res.servers.find((s) => s.id === 'a').promptAutoRaise).toBe(false);
+    expect(res.servers.find((s) => s.id === 'a').promptGlow).toBe('green');
+    expect(res.servers.find((s) => s.id === 'a').promptGlowStrength).toBe(150);
+    expect(res.servers.find((s) => s.label === 'New').promptGlow).toBeUndefined();
+    expect(res.servers.find((s) => s.label === 'New').promptHighlight).toBeUndefined();
+    expect(res.servers.find((s) => s.label === 'New').promptAutoRaise).toBeUndefined();
   });
 
   it('imports into an empty list', () => {

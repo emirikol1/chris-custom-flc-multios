@@ -148,6 +148,9 @@ describe('page scripts', () => {
     parses(GAME_READY_SCRIPT);
     expect(SNAPSHOT_LAYOUT_SCRIPT).toContain('ui.windows');
     expect(SNAPSHOT_LAYOUT_SCRIPT).toContain('foundry.applications');
+    expect(SNAPSHOT_LAYOUT_SCRIPT).toContain('poppedOut.values');
+    expect(SNAPSHOT_LAYOUT_SCRIPT).toContain('appIsPoppedOut');
+    expect(buildRestoreScript({ kind: 'document', uuid: 'Actor.abc123', mode: 'popout' })).toContain('onPopoutClicked');
     expect(buildTagPopoutScript(7)).toContain('__flcPopoutTag = 7');
     expect(buildIdentifyPopoutScript(7)).toContain('__flcPopoutTag === 7');
     expect(buildIdentifyPopoutScript('x')).toContain('=== NaN'); // never matches junk

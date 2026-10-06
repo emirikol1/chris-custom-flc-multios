@@ -19,7 +19,10 @@ Each install starts with an **empty server list** — no servers are bundled or 
 - **Popout windows** work: Foundry popouts (`window.open`, PopOut! module) open as real child windows sharing the game session
 - **Your servers** panel collapses to a compact list (server + session username + Connect)
 - **Screen state per session:** when you leave a server (close, disconnect, reload, or quit) the app records which Foundry windows and PopOut! popouts were open, with their size and position; the next time you connect to that server it reopens them and closes anything that wasn't part of the layout. Windows whose document no longer exists are skipped (and forgotten) without affecting the rest. Nothing is restored if your desktop/monitor layout changed since
-- **Forget layout** button per server (expanded list) clears that session's remembered layout if a bad one is blocking your connection
+- **Forget layout** button per server (expanded list) clears that session's remembered layout and prompt appearance if a bad one is blocking your connection
+- **Prompt windows always on main window** (game window View menu, on by default): short-lived prompts open centered in the game window. Sheets, journals, and the combat tracker stay put
+- **Highlight Prompts** (View submenu): glow color, glow strength (0–300%, default 100%), and **Auto-Raise**. Saved on that server profile when you change them; Clone copies them; Forget layout returns them to the defaults
+- A prompt raises the window it opened in, or flashes the usual operating-system attention when Auto-Raise is off. The game window also raises itself shortly after it opens and does not stay pinned on top
 
 ### Rendering & compatibility
 
@@ -68,12 +71,12 @@ You do **not** need Git or Node.js to run the app. Pick **one** installer for yo
 2. Download the file for your OS (see table below).
 3. Run or open it to install.
 
-| OS | Download (v0.4.1) | Install |
+| OS | Download (v0.5.0) | Install |
 |----|-------------------|---------|
-| **Windows** | [ChrisCustomFLC-MultiOS-0.4.1-windows-setup.exe](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.4.1/ChrisCustomFLC-MultiOS-0.4.1-windows-setup.exe) | Double-click the installer, follow the prompts |
-| **macOS** | [ChrisCustomFLC-MultiOS-0.4.1-mac.dmg](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.4.1/ChrisCustomFLC-MultiOS-0.4.1-mac.dmg) | Open the DMG, drag the app to **Applications** |
-| **Linux (Mint / Ubuntu / Debian)** | [ChrisCustomFLC-MultiOS-0.4.1-linux.deb](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.4.1/ChrisCustomFLC-MultiOS-0.4.1-linux.deb) | Double-click the `.deb`, or `sudo apt install ./ChrisCustomFLC-MultiOS-0.4.1-linux.deb` |
-| **Linux (other)** | [ChrisCustomFLC-MultiOS-0.4.1-linux.AppImage](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.4.1/ChrisCustomFLC-MultiOS-0.4.1-linux.AppImage) | Right-click → **Properties** → allow executing, then double-click |
+| **Windows** | [ChrisCustomFLC-MultiOS-0.5.0-windows-setup.exe](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.0/ChrisCustomFLC-MultiOS-0.5.0-windows-setup.exe) | Double-click the installer, follow the prompts |
+| **macOS** | [ChrisCustomFLC-MultiOS-0.5.0-mac.dmg](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.0/ChrisCustomFLC-MultiOS-0.5.0-mac.dmg) | Open the DMG, drag the app to **Applications** |
+| **Linux (Mint / Ubuntu / Debian)** | [ChrisCustomFLC-MultiOS-0.5.0-linux.deb](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.0/ChrisCustomFLC-MultiOS-0.5.0-linux.deb) | Double-click the `.deb`, or `sudo apt install ./ChrisCustomFLC-MultiOS-0.5.0-linux.deb` |
+| **Linux (other)** | [ChrisCustomFLC-MultiOS-0.5.0-linux.AppImage](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.0/ChrisCustomFLC-MultiOS-0.5.0-linux.AppImage) | Right-click → **Properties** → allow executing, then double-click |
 
 All versions: **[Releases](https://github.com/emirikol1/chris-custom-flc-multios/releases)**.
 
@@ -93,8 +96,8 @@ Then install the file that matches your OS:
 |----|-----------------|---------|
 | **Linux (.deb)** | [`ChrisCustomFLC-MultiOS-0.4.1-linux.deb`](dist/ChrisCustomFLC-MultiOS-0.4.1-linux.deb) | Double-click or `sudo apt install ./dist/ChrisCustomFLC-MultiOS-0.4.1-linux.deb` |
 | **Linux (AppImage)** | [`ChrisCustomFLC-MultiOS-0.4.1-linux.AppImage`](dist/ChrisCustomFLC-MultiOS-0.4.1-linux.AppImage) | Mark executable (`chmod +x`), then run |
-| **Windows** | not in `dist/` | [Download from the release](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.4.1/ChrisCustomFLC-MultiOS-0.4.1-windows-setup.exe) |
-| **macOS** | not in `dist/` | [Download from the release](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.4.1/ChrisCustomFLC-MultiOS-0.4.1-mac.dmg) |
+| **Windows** | not in `dist/` | [Download from the release](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.0/ChrisCustomFLC-MultiOS-0.5.0-windows-setup.exe) |
+| **macOS** | not in `dist/` | [Download from the release](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.0/ChrisCustomFLC-MultiOS-0.5.0-mac.dmg) |
 
 > **Note:** The `dist/` folder currently ships Linux builds in-tree. Windows and macOS installers are produced by CI and attached to GitHub Releases.
 

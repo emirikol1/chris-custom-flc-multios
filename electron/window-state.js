@@ -178,7 +178,7 @@ function createWindowStateStore({ filePath, getDisplays } = {}) {
    * @param {object} win BrowserWindow-like
    * @param {string} key
    */
-  function saveNow(win, key) {
+  function saveNow(win, key, snapshot) {
     try {
       if (typeof win.isDestroyed === 'function' && win.isDestroyed()) return;
       const maximized = typeof win.isMaximized === 'function' ? Boolean(win.isMaximized()) : false;
@@ -189,7 +189,9 @@ function createWindowStateStore({ filePath, getDisplays } = {}) {
         // Keep the last known normal bounds so unmaximize restores sensibly.
         next = { ...previous, maximized: true };
       } else {
-        const bounds = typeof win.getNormalBounds === 'function' ? win.getNormalBounds() : win.getBounds();
+        const bounds = snapshot && Number.isFinite(snapshot.x) && Number.isFinite(snapshot.y)
+          ? snapshot
+          : (typeof win.getNormalBounds === 'function' ? win.getNormalBounds() : win.getBounds());
         next = {
           x: bounds.x,
           y: bounds.y,
@@ -215,6 +217,7 @@ function createWindowStateStore({ filePath, getDisplays } = {}) {
    */
   function track(win, key) {
     let timer = null;
+    let pending = null;
 
     const clearTimer = () => {
       if (timer !== null) {
@@ -224,15 +227,23 @@ function createWindowStateStore({ filePath, getDisplays } = {}) {
     };
 
     const onDebounced = () => {
+      try {
+        pending = typeof win.getNormalBounds === 'function' ? win.getNormalBounds() : win.getBounds();
+      } catch {
+        pending = null;
+      }
       clearTimer();
       timer = setTimeout(() => {
         timer = null;
-        saveNow(win, key);
+        const shot = pending;
+        pending = null;
+        saveNow(win, key, shot);
       }, SAVE_DEBOUNCE_MS);
     };
 
     const onClose = () => {
       clearTimer();
+      pending = null;
       saveNow(win, key);
     };
 

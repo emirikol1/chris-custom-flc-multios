@@ -110,7 +110,7 @@ describe('createNarratorService', () => {
       now: () => '2026-01-01T00:00:00.000Z',
     });
     const result = await service.handleFoundryLine({
-      speaker: 'Chris',
+      speaker: 'Quinn',
       text: '[MUD] You MASSACRE the orc!',
       kind: 'ic',
     });

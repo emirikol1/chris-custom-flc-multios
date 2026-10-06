@@ -16,4 +16,7 @@ contextBridge.exposeInMainWorld('flcGame', {
   layoutSnapshot: (snapshot) => {
     ipcRenderer.send('foundry:layout-snapshot', snapshot);
   },
+  promptAttention: () => {
+    ipcRenderer.send('foundry:prompt-attention');
+  },
 });

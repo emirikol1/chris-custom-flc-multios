@@ -8,6 +8,7 @@
  */
 
 const { addServer, updateServer } = require('./store');
+const { isExplicitPromptGlowStrength, isKnownPromptGlow, normalizePromptGlowStrength } = require('./center-prompts');
 
 const FORMAT_VERSION = 1;
 const APP_ID = 'chris-custom-flc-multios';
@@ -141,6 +142,13 @@ function pickServerFields(raw) {
   if (typeof raw.username === 'string' && raw.username !== '') out.username = raw.username;
   if (typeof raw.password === 'string' && raw.password !== '') out.password = raw.password;
   if (raw.autoJoin !== undefined) out.autoJoin = Boolean(raw.autoJoin);
+  if (typeof raw.centerPrompts === 'boolean') out.centerPrompts = raw.centerPrompts;
+  if (typeof raw.promptHighlight === 'boolean') out.promptHighlight = raw.promptHighlight;
+  if (typeof raw.promptAutoRaise === 'boolean') out.promptAutoRaise = raw.promptAutoRaise;
+  if (isKnownPromptGlow(raw.promptGlow)) out.promptGlow = raw.promptGlow;
+  if (isExplicitPromptGlowStrength(raw.promptGlowStrength)) {
+    out.promptGlowStrength = normalizePromptGlowStrength(raw.promptGlowStrength);
+  }
   return out;
 }
 

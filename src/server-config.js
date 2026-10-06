@@ -25,6 +25,7 @@
 
   /** @type {'add'|'edit'|'clone'} */
   let mode = "add";
+  let sourceServer = {};
   let submitting = false;
 
   function showNotification(message, level = "info") {
@@ -139,6 +140,7 @@
   function applyContext(ctx) {
     mode = ctx && (ctx.mode === "edit" || ctx.mode === "clone") ? ctx.mode : "add";
     const server = (ctx && ctx.server) || {};
+    sourceServer = server;
     els.serverForm.reset();
     setFormError("");
     setGetUsersResult("");
@@ -165,7 +167,7 @@
   }
 
   function readFormPayload() {
-    return {
+    const payload = {
       label: els.label.value.trim(),
       url: els.url.value.trim(),
       notes: els.notes.value.trim(),
@@ -173,6 +175,8 @@
       password: els.password.value || undefined,
       autoJoin: Boolean(els.autoJoin.checked),
     };
+    if (mode === "clone" && sourceServer.id) payload.cloneFrom = sourceServer.id;
+    return payload;
   }
 
   async function handleFormSubmit(event) {

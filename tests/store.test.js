@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  clearPromptAppearance,
   addServer,
   deleteServer,
   listServers,
@@ -73,6 +74,40 @@ describe('server list operations', () => {
     expect(on[0].autoJoin).toBe(true);
     const off = addServer([], { label: 'B', url: 'b.example', autoJoin: false });
     expect(off[0].autoJoin).toBe(false);
+  });
+
+  it('omits centerPrompts until a server profile stores a boolean', () => {
+    const created = addServer([], { label: 'A', url: 'a.example' });
+    expect(created[0].centerPrompts).toBeUndefined();
+    const off = addServer([], { label: 'B', url: 'b.example', centerPrompts: false });
+    expect(off[0].centerPrompts).toBe(false);
+    const renamed = updateServer(off, off[0].id, { label: 'B2' });
+    expect(renamed[0].centerPrompts).toBe(false);
+    expect(updateServer(renamed, renamed[0].id, { centerPrompts: true })[0].centerPrompts).toBe(true);
+  });
+
+  it('omits prompt glow until a server profile stores a known color', () => {
+    const created = addServer([], { label: 'A', url: 'a.example' });
+    expect(created[0].promptHighlight).toBeUndefined();
+    expect(created[0].promptGlow).toBeUndefined();
+    const colored = addServer([], { label: 'B', url: 'b.example', promptHighlight: false, promptAutoRaise: false, promptGlow: 'pink' });
+    expect(colored[0].promptHighlight).toBe(false);
+    expect(colored[0].promptAutoRaise).toBe(false);
+    expect(colored[0].promptGlow).toBe('pink');
+    const junk = addServer([], { label: 'C', url: 'c.example', promptGlow: 'chartreuse' });
+    expect(junk[0].promptGlow).toBeUndefined();
+    expect(updateServer(colored, colored[0].id, { label: 'B2' })[0].promptGlow).toBe('pink');
+    const strong = addServer([], { label: 'D', url: 'd.example', promptGlowStrength: 400 });
+    expect(strong[0].promptGlowStrength).toBe(300);
+    const cloned = addServer(colored, { label: 'Copy', url: 'b.example', cloneFrom: colored[0].id });
+    expect(cloned[1].promptGlow).toBe('pink');
+    expect(cloned[1].promptHighlight).toBe(false);
+    expect(cloned[1].id).not.toBe(colored[0].id);
+    const cleared = clearPromptAppearance(colored, colored[0].id);
+    expect(cleared.changed).toBe(true);
+    expect(cleared.servers[0].promptGlow).toBeUndefined();
+    expect(cleared.servers[0].promptHighlight).toBeUndefined();
+    expect(cleared.servers[0].label).toBe('B');
   });
 
   it('updateServer toggles autoJoin', () => {

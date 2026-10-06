@@ -15,6 +15,7 @@ env:
 
 jobs:
   linux:
+    if: github.ref_type != 'tag'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,6 +36,7 @@ jobs:
           if-no-files-found: error
 
   windows:
+    if: github.ref_type != 'tag'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,6 +54,7 @@ jobs:
           if-no-files-found: error
 
   macos:
+    if: github.ref_type != 'tag'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -69,6 +72,7 @@ jobs:
           if-no-files-found: error
 
   publish-release:
+    if: github.ref_type != 'tag'
     needs: [linux, windows, macos]
     runs-on: ubuntu-latest
     steps:
@@ -84,6 +88,10 @@ jobs:
           find artifacts -type f \( -name '*.deb' -o -name '*.AppImage' -o -name '*.exe' -o -name '*.dmg' \) -print
           mapfile -t FILES < <(find artifacts -type f \( -name '*.deb' -o -name '*.AppImage' -o -name '*.exe' -o -name '*.dmg' \))
           test "${#FILES[@]}" -ge 4
-          gh release view v0.4.1 >/dev/null
-          gh release upload v0.4.1 "${FILES[@]}" --clobber
-          gh release edit v0.4.1 --notes-file RELEASE-NOTES.md
+          TAG="v$(sed -n 's/^  "version": "\([^"]*\)".*/\1/p' package.json | head -n 1)"
+          test -n "$TAG" && test "$TAG" != "v"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "${{ github.sha }}" --title "$TAG" --notes-file RELEASE-NOTES.md
+          fi
+          gh release upload "$TAG" "${FILES[@]}" --clobber
+          gh release edit "$TAG" --notes-file RELEASE-NOTES.md

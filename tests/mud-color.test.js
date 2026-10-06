@@ -92,15 +92,15 @@ describe('mudToAnsi', () => {
     expect(ansi).not.toContain('hinjures');
   });
 
-  it('drops a failed rainbow prefix so Saulina is not turned into GA', () => {
+  it('drops a failed rainbow prefix so a name is not turned into GA', () => {
     const raw =
-      "{WG{R{YA{G{C{B{M{W{xSaulina's {wGraveflame Reaver{x {RM{YA{GS{CS{BA{MC{WR{RE{x";
+      "{WG{R{YA{G{C{B{M{W{xMira's {wlongsword{x {RM{YA{GS{CS{BA{MC{WR{RE{x";
     const ansi = mudToAnsi(raw);
     const plain = ansi.replace(/\x1b\[[0-9;]*m/g, '');
-    expect(plain).toContain("Saulina's");
-    expect(plain).toContain('Graveflame Reaver');
+    expect(plain).toContain("Mira's");
+    expect(plain).toContain('longsword');
     expect(plain).toContain('MASSACRE');
-    expect(plain).toMatch(/^Saulina's/);
+    expect(plain).toMatch(/^Mira's/);
     expect(plain).not.toMatch(/^GA/);
   });
 });

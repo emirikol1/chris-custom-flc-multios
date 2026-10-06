@@ -18,6 +18,7 @@ const gpuPrefsAtStartup = readGpuPrefs(gpuPrefsPath);
 const {
   logInfo,
   logError,
+  logWarn,
   registerRendererLogIpc,
 } = require('./logger');
 
@@ -43,6 +44,7 @@ const {
   updateServer,
   deleteServer,
   listServers,
+  clearPromptAppearance,
 } = require('./store');
 const { readAppPrefs, writeAppPrefs } = require('./app-prefs');
 const { fetchJoinPageUsers } = require('./foundry-users');
@@ -62,6 +64,7 @@ const {
   writeStates: writeWindowStates,
 } = require('./window-state');
 const { buildExport, parseImport, mergeServers } = require('./settings-transfer');
+const { isKnownPromptGlow, normalizePromptGlowStrength } = require('./center-prompts');
 const { loadSettings: loadNarratorSettings } = require('./narrator-store');
 const {
   openServerConfigWindow,
@@ -132,6 +135,30 @@ process.on('unhandledRejection', (reason) => {
 function sendToJoinWindow(channel, payload) {
   if (joinWindow && !joinWindow.isDestroyed()) {
     joinWindow.webContents.send(channel, payload);
+  }
+}
+
+/**
+ * Persist one server-profile choice. A missing server id is session-only.
+ * @param {string} serverId
+ * @param {Record<string, unknown>} patch
+ * @param {string} label
+ */
+function saveServerChoice(serverId, patch, label) {
+  if (!serverId) return;
+  if (Object.prototype.hasOwnProperty.call(patch, 'promptGlow') && !isKnownPromptGlow(patch.promptGlow)) return;
+  try {
+    ensureServersFile(serversFilePath);
+    const servers = loadServers(serversFilePath);
+    if (!servers.some((s) => s.id === serverId)) return;
+    const next = updateServer(servers, serverId, patch);
+    saveServers(serversFilePath, next);
+    sendToJoinWindow('servers:changed', {});
+    logInfo(`[main] ${label}`);
+  } catch (err) {
+    logWarn('[main] server choice save failed', {
+      error: err && err.name ? err.name : 'Error',
+    });
   }
 }
 
@@ -558,6 +585,40 @@ registerGameIpc(gpuPrefsPath, {
   windowState,
   isMudEnabled,
   buildCaptureScript: () => buildCaptureSource(loadScoreboard(narratorRoot)),
+  setCenterPrompts: (serverId, enabled) => {
+    saveServerChoice(serverId, { centerPrompts: enabled === true }, `centerPrompts=${enabled === true ? 1 : 0}`);
+  },
+  setPromptHighlight: (serverId, enabled) => {
+    saveServerChoice(serverId, { promptHighlight: enabled === true }, `promptHighlight=${enabled === true ? 1 : 0}`);
+  },
+  setPromptAutoRaise: (serverId, enabled) => {
+    saveServerChoice(serverId, { promptAutoRaise: enabled === true }, `promptAutoRaise=${enabled === true ? 1 : 0}`);
+  },
+  setPromptGlow: (serverId, glow) => {
+    saveServerChoice(serverId, { promptGlow: glow }, 'promptGlow');
+  },
+  setPromptGlowStrength: (serverId, strength) => {
+    const n = normalizePromptGlowStrength(strength);
+    saveServerChoice(serverId, { promptGlowStrength: n }, `promptGlowStrength=${n}`);
+  },
+  forgetPromptAppearance: (serverId) => {
+    if (!serverId) return false;
+    try {
+      ensureServersFile(serversFilePath);
+      const servers = loadServers(serversFilePath);
+      const result = clearPromptAppearance(servers, serverId);
+      if (!result.changed) return false;
+      saveServers(serversFilePath, result.servers);
+      sendToJoinWindow('servers:changed', {});
+      logInfo('[main] prompt appearance reset');
+      return true;
+    } catch (err) {
+      logWarn('[main] prompt appearance reset failed', {
+        error: err && err.name ? err.name : 'Error',
+      });
+      return false;
+    }
+  },
   onGameWindowOpened: (_win, info) => {
     if (isMudEnabled()) {
       const mudWin = ensureNarratorWindow(windowState, info && info.layoutKey);

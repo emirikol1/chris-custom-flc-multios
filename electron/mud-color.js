@@ -178,7 +178,7 @@ function alreadyCoded(source, offset) {
 
 /**
  * Drop fake `{h` codes and failed rainbow prefixes (color codes with almost
- * no letters) so names like Saulina are not turned into "GA".
+ * no letters) so a name is not turned into "GA".
  * @param {string} text
  * @returns {string}
  */

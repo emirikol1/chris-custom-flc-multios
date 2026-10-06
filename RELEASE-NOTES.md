@@ -1,6 +1,21 @@
-# v0.4.1
+# v0.5.0
 
 Chris's Custom FLC MultiOS — Foundry VTT join client for Windows, macOS, and Linux.
+
+## What's new in 0.5.0
+
+- **Prompt windows always on main window.** On the game window's View menu, on unless you turn it off. Short-lived prompts (roll confirmations and other dialogs) open centered in that game window. Character sheets, journals, sidebar tabs, and the combat tracker are left where they are. Drag a prompt by its title bar to keep that one where you put it; the next prompt centers again.
+- **Highlight Prompts.** Its own View submenu, on by default. Short-lived prompts get a slow outline glow. Colors: blue (default), red, orange, yellow, green, purple, pink, and white. Each color has a light-desktop and a dark-desktop variant. High-contrast mode keeps a plain outline and turns the glow off.
+- **Auto-Raise.** On by default, listed above the colors. The window that actually contains the prompt comes to the front, including a popped-out sheet, and then behaves like a normal window. When Auto-Raise is off, a prompt uses the usual operating-system attention flash, and that flash stops when the window is focused.
+- **Glow strength.** Listed under the colors as a percent of the standard glow. Default 100%. Enter a whole number from 0 to 300. Zero removes the halo and leaves the outline.
+- Those choices are saved on the server profile when you change them. **Clone** copies them, so two saved connections to the same world can look different. **Forget layout** clears them back to the defaults along with that session's screen layout.
+- **Popped-out windows are remembered.** The next connection restores sheets that were popped out, not only their size and position.
+- The game window raises itself about two seconds after it opens, including if it was minimized, and does not stay pinned above other windows.
+- Logging out of Foundry on purpose does not sign you straight back in.
+
+## Fixes in 0.5.0
+
+- The main game window keeps the place it was opened in when a popped-out sheet is on screen.
 
 ## Fixes in 0.4.1
 

@@ -18,8 +18,18 @@
  *   { matched: true,  submitted: true }
  *   { matched: false, userCount: <number> }
  *   { matched: false, error: 'exception' }
+ *   { skipped: 'logout' } when the user intentionally logged out
  *   (nothing at all if the form never appears before the timeout)
+ *
+ * Intentional logout: the game page records `flc-autologin-skip` in
+ * sessionStorage before Foundry returns to the join screen. That flag
+ * survives the navigation and this script refuses to submit. A dropped
+ * connection does not set the flag, so autologin still runs. Closing the
+ * game window clears sessionStorage, so the next Connect autologins again.
  */
+
+/** sessionStorage key set when the user invokes Foundry's log out. */
+const AUTOLOGIN_SKIP_KEY = 'flc-autologin-skip';
 
 /** How long the injected script keeps looking for the join form (ms). */
 const AUTOLOGIN_TIMEOUT_MS = 8000;
@@ -92,14 +102,6 @@ function buildAutologinBody({ username, password } = {}) {
 var ARMED = ${JSON.stringify(AUTOLOGIN_ARMED_RESULT)};
 try {
   if (window.__flcAutologinDone || window.__flcAutologinArmed) return ARMED;
-  window.__flcAutologinArmed = true;
-
-  var CREDS = ${credsLiteral};
-  ${MATCH_USER_OPTION_SOURCE}
-
-  var intervalId = null;
-  var timeoutId = null;
-  var observer = null;
 
   var report = function (status) {
     try {
@@ -108,6 +110,27 @@ try {
       }
     } catch (ignored) {}
   };
+
+  var skipAfterLogout = false;
+  try {
+    skipAfterLogout = !!(window.sessionStorage
+      && window.sessionStorage.getItem(${JSON.stringify(AUTOLOGIN_SKIP_KEY)}) === '1');
+  } catch (ignored) {}
+  if (skipAfterLogout) {
+    window.__flcAutologinDone = true;
+    window.__flcAutologinArmed = true;
+    report({ skipped: 'logout' });
+    return ARMED;
+  }
+
+  window.__flcAutologinArmed = true;
+
+  var CREDS = ${credsLiteral};
+  ${MATCH_USER_OPTION_SOURCE}
+
+  var intervalId = null;
+  var timeoutId = null;
+  var observer = null;
 
   var cleanup = function () {
     if (intervalId !== null) { try { window.clearInterval(intervalId); } catch (ignored) {} intervalId = null; }
@@ -238,6 +261,103 @@ function buildAutologinScript(creds) {
 }
 
 /**
+ * How long the game page keeps looking for `game.logOut` (attempts × poll).
+ * The click listener is armed immediately; this only covers logout calls that
+ * do not go through the logout control.
+ */
+const LOGOUT_INTENT_POLL_ATTEMPTS = 40;
+
+/**
+ * Script injected into the Foundry game page. It remembers an intentional
+ * log out in sessionStorage so the next join-page load does not autologin.
+ *
+ * The flag is cleared when this script arms, which is a fresh game-page load.
+ * A dropped socket does not call `game.logOut` and does not click the logout
+ * control, so it does not set the flag.
+ *
+ * @returns {string}
+ */
+function buildLogoutIntentBody() {
+  const keyLiteral = JSON.stringify(AUTOLOGIN_SKIP_KEY);
+  return `
+'use strict';
+try {
+  if (window.__flcLogoutIntentArmed) return;
+  window.__flcLogoutIntentArmed = true;
+
+  var KEY = ${keyLiteral};
+  var mark = function () {
+    try {
+      if (window.sessionStorage) window.sessionStorage.setItem(KEY, '1');
+    } catch (ignored) {}
+  };
+  try {
+    if (window.sessionStorage) window.sessionStorage.removeItem(KEY);
+  } catch (ignored) {}
+
+  if (document && typeof document.addEventListener === 'function') {
+    document.addEventListener('click', function (ev) {
+      var target = ev && (ev.target || ev.srcElement);
+      if (!target || typeof target.closest !== 'function') return;
+      if (target.closest('[data-action="logout"], #logout, button.logout, a.logout')) mark();
+    }, true);
+  }
+
+  var wrapped = null;
+  var arm = function () {
+    var g = window.game;
+    if (!g || typeof g.logOut !== 'function') return false;
+    if (wrapped && g.logOut === wrapped) return true;
+    var orig = g.logOut;
+    wrapped = function () {
+      mark();
+      return orig.apply(this, arguments);
+    };
+    g.logOut = wrapped;
+    return true;
+  };
+
+  if (!arm() && typeof window.setInterval === 'function') {
+    var tries = 0;
+    var timer = window.setInterval(function () {
+      tries += 1;
+      if (arm() || tries >= ${LOGOUT_INTENT_POLL_ATTEMPTS}) {
+        try { window.clearInterval(timer); } catch (ignored) {}
+      }
+    }, ${AUTOLOGIN_POLL_MS});
+  }
+} catch (ignored) {}
+`;
+}
+
+/**
+ * Full IIFE for `webContents.executeJavaScript` on the game page.
+ * @returns {string}
+ */
+function buildLogoutIntentScript() {
+  return `(function (window, document) {${buildLogoutIntentBody()}})(window, document);`;
+}
+
+/**
+ * True when `urlString` points at Foundry's game route (`/game`, possibly
+ * under a route prefix). Invalid URLs yield `false`.
+ *
+ * @param {string} urlString
+ * @returns {boolean}
+ */
+function isGamePageUrl(urlString) {
+  if (typeof urlString !== 'string' || !urlString) return false;
+  let pathname;
+  try {
+    pathname = new URL(urlString).pathname;
+  } catch {
+    return false;
+  }
+  const trimmed = pathname.replace(/\/+$/, '');
+  return trimmed === '/game' || trimmed.endsWith('/game');
+}
+
+/**
  * True when `urlString` points at Foundry's join route (`/join`, possibly
  * under a route prefix). Invalid URLs yield `false`.
  *
@@ -259,10 +379,14 @@ function isJoinPageUrl(urlString) {
 module.exports = {
   AUTOLOGIN_ARMED_RESULT,
   AUTOLOGIN_POLL_MS,
+  AUTOLOGIN_SKIP_KEY,
   AUTOLOGIN_TIMEOUT_MS,
   MATCH_USER_OPTION_SOURCE,
   buildAutologinBody,
   buildAutologinScript,
+  buildLogoutIntentBody,
+  buildLogoutIntentScript,
+  isGamePageUrl,
   isJoinPageUrl,
   matchUserOption,
 };
