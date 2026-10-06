@@ -64,13 +64,7 @@ Each install starts with an **empty server list** — no servers are bundled or 
 
 ## Install
 
-You do **not** need Git or Node.js to run the app. Pick **one** installer for your operating system.
-
-### Option A — GitHub Releases (recommended)
-
-1. Open **[Releases](https://github.com/emirikol1/chris-custom-flc-multios/releases/latest)**.
-2. Download the file for your OS (see table below).
-3. Run or open it to install.
+You do **not** need Git or Node.js to run the app. Download the installer for your operating system from **[GitHub Releases](https://github.com/emirikol1/chris-custom-flc-multios/releases/latest)**.
 
 | OS | Download (v0.5.4) | Install |
 |----|-------------------|---------|
@@ -109,27 +103,6 @@ open "/Applications/Chris's Custom FLC MultiOS.app"
 
 All versions: **[Releases](https://github.com/emirikol1/chris-custom-flc-multios/releases)**.
 
-### Option B — Installers in this repository (`dist/`)
-
-Pre-built installers are also committed under [`dist/`](dist/) (large binaries use [Git LFS](https://git-lfs.github.com/)).
-
-If you cloned the repo, fetch LFS objects first:
-
-```bash
-git lfs pull
-```
-
-Then install the file that matches your OS:
-
-| OS | File in `dist/` | Install |
-|----|-----------------|---------|
-| **Linux (.deb)** | [`ChrisCustomFLC-MultiOS-0.4.1-linux.deb`](dist/ChrisCustomFLC-MultiOS-0.4.1-linux.deb) | Double-click or `sudo apt install ./dist/ChrisCustomFLC-MultiOS-0.4.1-linux.deb` |
-| **Linux (AppImage)** | [`ChrisCustomFLC-MultiOS-0.4.1-linux.AppImage`](dist/ChrisCustomFLC-MultiOS-0.4.1-linux.AppImage) | Mark executable (`chmod +x`), then run |
-| **Windows** | not in `dist/` | [Download from the release](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.4/ChrisCustomFLC-MultiOS-0.5.4-windows-setup.exe) |
-| **macOS** | not in `dist/` | [Download from the release](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.4/ChrisCustomFLC-MultiOS-0.5.4-mac.dmg) |
-
-> **Note:** The `dist/` folder currently ships Linux builds in-tree. Windows and macOS installers are produced by CI and attached to GitHub Releases.
-
 ## First run
 
 1. Launch **Chris's Custom FLC MultiOS**.
@@ -164,7 +137,7 @@ npm run dist:win     # Windows NSIS installer
 npm run dist:mac     # macOS DMG
 ```
 
-Output goes to `dist/`. The `predist` step refuses to package if dev `data/servers.json` or log files are present.
+Output goes to `dist/` on that machine. Published installers are the GitHub Release files. The `predist` step refuses to package if dev `data/servers.json` or log files are present.
 
 ## Credits & attribution
 
