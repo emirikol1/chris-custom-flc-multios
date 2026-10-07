@@ -1,6 +1,10 @@
-# v0.6.4
+# v0.6.5
 
 Chris's Custom FLC MultiOS — Foundry VTT join client for Windows, macOS, and Linux.
+
+## What's new in 0.6.5
+
+- Reload is F5, full refresh is Ctrl+F5, and DevTools is F12. Cmd/Ctrl+R, Cmd/Ctrl+Shift+R, and the previous DevTools shortcut still work too.
 
 ## What's new in 0.6.4
 

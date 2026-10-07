@@ -4,9 +4,52 @@ const zlib = require('zlib');
 const { PROMPT_GLOW_COLORS, normalizePromptGlow, normalizePromptGlowStrength } = require('./center-prompts');
 
 /**
+ * Windows chords are visible. The Mac/Chromium chords are hidden menu items so
+ * both stay registered. A DevTools item with no accelerator keeps Electron's
+ * platform default when the menu is built (Ctrl+Shift+I, or Alt+Cmd+I on macOS).
+ * @param {{ includeFullRefresh?: boolean, onFullRefresh?: () => void }} [opts]
+ * @returns {Array<object>}
+ */
+function browsingCommands({ includeFullRefresh = false, onFullRefresh } = {}) {
+  /** @type {Array<object>} */
+  const items = [
+    { role: 'reload', accelerator: 'F5' },
+    { role: 'reload', accelerator: 'CmdOrCtrl+R', visible: false },
+  ];
+  if (includeFullRefresh) {
+    const runFullRefresh = () => {
+      if (typeof onFullRefresh === 'function') onFullRefresh();
+    };
+    items.push(
+      {
+        id: 'full-refresh',
+        label: 'Full Refresh (clear cache)',
+        accelerator: 'Ctrl+F5',
+        click: runFullRefresh,
+      },
+      {
+        id: 'full-refresh-alt',
+        label: 'Full Refresh (clear cache)',
+        accelerator: 'CmdOrCtrl+Shift+R',
+        visible: false,
+        click: runFullRefresh,
+      },
+    );
+  }
+  items.push(
+    { role: 'toggleDevTools', accelerator: 'F12' },
+    { role: 'toggleDevTools', visible: false },
+  );
+  return items;
+}
+
+/**
  * Menu bar for the main game window. Popouts keep the hidden default.
  * Custom items are Full Refresh, the center-prompts checkbox, and the highlight submenu.
  * The rest match Electron's usual View menu.
+ * Reload, Full Refresh, and DevTools each keep two chords. The menu shows the
+ * Windows keys (F5, Ctrl+F5, F12). Hidden items keep Cmd/Ctrl+R, Cmd/Ctrl+Shift+R,
+ * and Electron's DevTools default.
  *
  * @param {{
  *   centerPrompts?: boolean,
@@ -61,16 +104,7 @@ function gameWindowMenuTemplate({
     {
       label: 'View',
       submenu: [
-        { role: 'reload' },
-        {
-          id: 'full-refresh',
-          label: 'Full Refresh (clear cache)',
-          accelerator: 'CmdOrCtrl+Shift+R',
-          click() {
-            onFullRefresh && onFullRefresh();
-          },
-        },
-        { role: 'toggleDevTools' },
+        ...browsingCommands({ includeFullRefresh: true, onFullRefresh }),
         { type: 'separator' },
         { role: 'resetZoom' },
         { role: 'zoomIn' },
@@ -216,13 +250,11 @@ function plainAppMenuTemplate({ bringAllToFront } = {}) {
     {
       label: 'View',
       submenu: [
-        { role: 'reload' },
+        ...browsingCommands(),
         { type: 'separator' },
         { role: 'resetZoom' },
         { role: 'zoomIn' },
         { role: 'zoomOut' },
-        { type: 'separator' },
-        { role: 'toggleDevTools' },
         { type: 'separator' },
         bringAllToFrontMenuItem(bringAllToFront),
       ],

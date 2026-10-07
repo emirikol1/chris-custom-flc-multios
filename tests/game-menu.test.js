@@ -22,6 +22,8 @@ describe('game window View menu', () => {
     const roles = view.submenu.map((item) => item.role).filter(Boolean);
     expect(roles).toEqual([
       'reload',
+      'reload',
+      'toggleDevTools',
       'toggleDevTools',
       'resetZoom',
       'zoomIn',
@@ -29,9 +31,23 @@ describe('game window View menu', () => {
       'togglefullscreen',
     ]);
     expect(roles).not.toContain('forceReload');
+    const reloads = view.submenu.filter((item) => item.role === 'reload');
+    expect(reloads.map((item) => item.accelerator)).toEqual(['F5', 'CmdOrCtrl+R']);
+    expect(reloads[0].visible).toBeUndefined();
+    expect(reloads[1].visible).toBe(false);
+    const devtools = view.submenu.filter((item) => item.role === 'toggleDevTools');
+    expect(devtools[0].accelerator).toBe('F12');
+    expect(devtools[0].visible).toBeUndefined();
+    expect(devtools[1].visible).toBe(false);
+    expect(devtools[1].accelerator).toBeUndefined();
     const refresh = view.submenu.find((item) => item.id === 'full-refresh');
+    const refreshAlt = view.submenu.find((item) => item.id === 'full-refresh-alt');
     expect(refresh.label).toBe('Full Refresh (clear cache)');
-    expect(refresh.accelerator).toBe('CmdOrCtrl+Shift+R');
+    expect(refresh.accelerator).toBe('Ctrl+F5');
+    expect(refreshAlt.label).toBe('Full Refresh (clear cache)');
+    expect(refreshAlt.accelerator).toBe('CmdOrCtrl+Shift+R');
+    expect(refreshAlt.visible).toBe(false);
+    expect(view.submenu.indexOf(refreshAlt)).toBe(view.submenu.indexOf(refresh) + 1);
     const item = centerItem(template);
     expect(item.label).toBe('Prompt windows always on main window');
     expect(item.type).toBe('checkbox');
@@ -43,11 +59,15 @@ describe('game window View menu', () => {
     const template = gameWindowMenuTemplate({
       onFullRefresh: () => seen.push('refresh'),
     });
-    const item = viewMenu(template).submenu.find((entry) => entry.id === 'full-refresh');
+    const view = viewMenu(template);
+    const item = view.submenu.find((entry) => entry.id === 'full-refresh');
+    const alt = view.submenu.find((entry) => entry.id === 'full-refresh-alt');
     item.click();
-    expect(seen).toEqual(['refresh']);
+    alt.click();
+    expect(seen).toEqual(['refresh', 'refresh']);
     expect(() => gameWindowMenuTemplate().find((entry) => entry.label === 'View')
-      .submenu.find((entry) => entry.id === 'full-refresh').click()).not.toThrow();
+      .submenu.filter((entry) => entry.id === 'full-refresh' || entry.id === 'full-refresh-alt')
+      .forEach((entry) => entry.click())).not.toThrow();
   });
 
   it('checks the box from the stored server choice and reports toggles', () => {
@@ -206,11 +226,20 @@ describe('plain application menu', () => {
     const view = template.find((item) => item.label === 'View');
     expect(view.submenu.map((item) => item.role).filter(Boolean)).toEqual([
       'reload',
+      'reload',
+      'toggleDevTools',
+      'toggleDevTools',
       'resetZoom',
       'zoomIn',
       'zoomOut',
-      'toggleDevTools',
     ]);
+    const reloads = view.submenu.filter((item) => item.role === 'reload');
+    expect(reloads.map((item) => item.accelerator)).toEqual(['F5', 'CmdOrCtrl+R']);
+    expect(reloads[1].visible).toBe(false);
+    const devtoolsItems = view.submenu.filter((item) => item.role === 'toggleDevTools');
+    expect(devtoolsItems[0].accelerator).toBe('F12');
+    expect(devtoolsItems[1].visible).toBe(false);
+    expect(devtoolsItems[1].accelerator).toBeUndefined();
     const dumped = JSON.stringify(template);
     expect(dumped).not.toContain('Highlight');
     expect(dumped).not.toContain('full-refresh');
