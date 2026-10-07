@@ -1,6 +1,10 @@
-# v0.6.2
+# v0.6.3
 
 Chris's Custom FLC MultiOS — Foundry VTT join client for Windows, macOS, and Linux.
+
+## What's new in 0.6.3
+
+- The loading clip finishes about three seconds before the game appears and stays stopped on the last frame, so the transition into the game does not cut off the ending.
 
 ## What's new in 0.6.2
 

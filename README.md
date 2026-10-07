@@ -140,7 +140,7 @@ Saved data (servers, GPU prefs, MUD settings, logs) lives in the app's user data
 
 While a world is joining, the loading card shows a short bundled clip just above the fuel gauges. The banner is as wide as the card and keeps the clip's shape, so it scales with the window. It is stored with the app, so the join does not wait on a download, and nothing is added until that card is already on screen.
 
-When this server has a usual join time, the clip stays paused until about one clip length remains (at most a second early), then speeds up or slows down (between half speed and double speed) so it ends as the game appears. The first join has no estimate, so it stays paused through world setup and starts when the scene is drawn.
+When this server has a usual join time, the clip stays paused until about one clip length plus three seconds remain, then speeds up or slows down (between half speed and double speed) so it finishes about three seconds before the game appears and stays stopped on the last frame. The first join has no estimate, so it stays paused through world setup and starts when the scene is drawn.
 
 The banner drops out, with no empty gap, when the card is under about 520 pixels wide or the window is under about 560 pixels tall, so the gauges and progress bar still fit. It stays off when the system asks for reduced motion, and it is removed when the loading card closes. The Loading banner is default on. The Join window **Loading banner** checkbox turns it off.
 

@@ -46,7 +46,8 @@ describe('buildLoadingVideoScript source', () => {
     expect(src).not.toContain('loading-dragon.mp4');
     expect(src.match(/flc-media:\/\//g)).toEqual(['flc-media://']);
     expect(src).toContain(String(CLIP_MS));
-    expect(src).toContain('START_LEAD_MS = 1000');
+    expect(src).toContain('START_LEAD_MS = 3000');
+    expect(src).toContain('END_PAD_MS = 3000');
     expect(src).not.toContain('1.6');
     expect(src).toContain('drawing scene');
     expect(src).toContain('setting up world');
@@ -587,11 +588,11 @@ describe('loading clip on the join card', () => {
     expect(video.playCalls).toBe(0);
     expect(host.api.paused).toBe(true);
 
-    host.api.setJoin(0, budget + 1500);
+    host.api.setJoin(0, budget + 3500);
     expect(video.playCalls).toBe(0);
     expect(video.paused).toBe(true);
 
-    host.api.setJoin(0, budget);
+    host.api.setJoin(0, budget + 3000);
     expect(video.playCalls).toBe(1);
     expect(video.paused).toBe(false);
     expect(video.playbackRate).toBeCloseTo(rateFor((video.duration - video.currentTime) * 1000, budget), 8);

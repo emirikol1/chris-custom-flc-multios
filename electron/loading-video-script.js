@@ -84,7 +84,8 @@ function buildLoadingVideoScript(mediaUrl) {
     if (window.__flcLoadingVideo) return;
     __RATE_FOR__
     var CLIP_MS = 10433;
-    var START_LEAD_MS = 1000;
+    var END_PAD_MS = 3000;
+    var START_LEAD_MS = 3000;
     var MEDIA = '${clip}';
     var anchor = 0;
     var haveAnchor = false;
@@ -504,10 +505,12 @@ function buildLoadingVideoScript(mediaUrl) {
     function applyRate(video, remain) {
       var rate = 1;
       var left = 0;
+      var windowMs = 0;
       if (!(typicalMs > 0) || !(remain > 0)) rate = 1;
       else {
         left = videoLeft(video);
-        rate = rateFor(left, remain);
+        windowMs = remain - END_PAD_MS;
+        rate = rateFor(left, windowMs);
       }
       try { video.playbackRate = rate; } catch (e) {}
     }
