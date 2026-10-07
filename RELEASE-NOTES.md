@@ -1,6 +1,10 @@
-# v0.5.5
+# v0.5.6
 
 Chris's Custom FLC MultiOS — Foundry VTT join client for Windows, macOS, and Linux.
+
+## What's new in 0.5.6
+
+- Connecting notice now clearly shows the connection is still in progress, with the server-configuration note as secondary; loading-gauge labels and meters are bound by gauge id so they can no longer swap.
 
 ## What's new in 0.5.5
 

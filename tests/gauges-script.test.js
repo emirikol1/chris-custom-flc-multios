@@ -250,6 +250,12 @@ function createHost() {
     return text ? text.textContent : '';
   }
 
+  function labelOf(id) {
+    const node = item(id);
+    const text = node && node.querySelector('.flc-g-label');
+    return text ? text.textContent : '';
+  }
+
   return {
     document,
     loading,
@@ -261,6 +267,7 @@ function createHost() {
     fillOf,
     textOf,
     expectOf,
+    labelOf,
     countGauges() {
       return walkAll(document, '#flc-gauges', []).length;
     },
@@ -346,6 +353,36 @@ describe('gauges on the loading overlay', () => {
     host.flushUntilQuiet();
     expect(host.fillOf('files')).toBeGreaterThan(0.99);
     expect(host.textOf('cache')).toBe('—');
+  });
+
+  it('binds each dial fill and label to its own gauge id', () => {
+    const host = createHost();
+    host.setReduced(true);
+    host.api.mount();
+    const fills = { files: 0.25, cache: 0.75, objects: 0.1, modules: 0.4, scene: 0.6 };
+    host.api.setFills(fills);
+    host.api.setExpectedLabels({ files: 101, cache: 202, objects: 303, modules: 404, scene: 505 });
+    const ids = ['files', 'cache', 'objects', 'modules', 'scene'];
+    for (let i = 0; i < ids.length; i += 1) {
+      const id = ids[i];
+      const node = host.item(id);
+      expect(node.getAttribute('data-gauge')).toBe(id);
+      expect(host.labelOf(id).toLowerCase()).toBe(id);
+      expect(host.fillOf(id)).toBe(fills[id]);
+      expect(host.textOf(id)).toBe(`${Math.round(fills[id] * 100)}%`);
+      expect(node.querySelector('.flc-g-fill').getAttribute('stroke-dashoffset')).toBe('0');
+      expect(host.expectOf(id)).toBe(String([101, 202, 303, 404, 505][i]));
+    }
+    host.api.setExpectedLabels({ files: 111, objects: 222, modules: 333, scene: 444 });
+    expect(host.expectOf('files')).toBe('111');
+    expect(host.expectOf('cache')).toBe('202');
+    expect(host.expectOf('objects')).toBe('222');
+    expect(host.expectOf('modules')).toBe('333');
+    expect(host.expectOf('scene')).toBe('444');
+    expect(host.labelOf('files')).toBe('Files');
+    expect(host.labelOf('cache')).toBe('Cache');
+    expect(host.fillOf('files')).toBe(0.25);
+    expect(host.fillOf('cache')).toBe(0.75);
   });
 
   it('shows only numeric expected labels', () => {

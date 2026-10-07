@@ -14,7 +14,7 @@ const { buildGaugesScript } = require('./gauges-script');
 const slowCache = require('./slow-cache-runtime');
 const { buildLoadingVideoScript } = require('./loading-video-script');
 const { attachMediaProtocol } = require('./media-protocol');
-const { expectedTotals, computeFills, monotonic } = require('./join-gauges');
+const { expectedTotals, computeFills, monotonic, GAUGES, gaugeBinding } = require('./join-gauges');
 const { getLogsDir, getDataDir } = require('./paths');
 const { buildTroubleshootingReport } = require('./ts-report');
 const { forgetNetTrace, redactedNetTraceText } = require('./net-trace-ipc');
@@ -133,17 +133,6 @@ function scriptInt(value) {
   return /^\d+$/.test(text) ? text : '0';
 }
 
-/**
- * @param {unknown} value
- * @returns {number | null}
- */
-function unitFill(value) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
-  if (value < 0) return 0;
-  if (value > 1) return 1;
-  return value;
-}
-
 function freshGaugeState() {
   return { prev: null, labeled: false, lastAt: 0, timer: null };
 }
@@ -164,16 +153,32 @@ function resetJoinGauges(win, seq) {
 }
 
 /**
+ * Captions and fills share one id-keyed record. The page looks each dial up
+ * by that id, so a missing cache caption cannot shift the dial beside it.
+ * @param {ReturnType<import('./join-gauges').expectedTotals>} expected
+ * @param {object} fills
+ * @returns {{ labels: Record<string, number | null>, fills: Record<string, number | null> }}
+ */
+function gaugeMaps(expected, fills) {
+  const bound = gaugeBinding(fills, expected);
+  /** @type {Record<string, number | null>} */
+  const labels = {};
+  /** @type {Record<string, number | null>} */
+  const bodies = {};
+  for (let i = 0; i < GAUGES.length; i += 1) {
+    const id = GAUGES[i].id;
+    labels[id] = bound[id].label;
+    bodies[id] = bound[id].fill;
+  }
+  return { labels, fills: bodies };
+}
+
+/**
  * @param {ReturnType<import('./join-gauges').expectedTotals>} expected
  * @returns {string}
  */
 function gaugeLabelScript(expected) {
-  const labels = {
-    files: expected && typeof expected.requests === 'number' ? expected.requests : null,
-    objects: expected && typeof expected.docs === 'number' ? expected.docs : null,
-    modules: expected && typeof expected.packages === 'number' ? expected.packages : null,
-    scene: expected && typeof expected.textures === 'number' ? expected.textures : null,
-  };
+  const labels = gaugeMaps(expected, null).labels;
   return 'window.__flcGauges&&window.__flcGauges.setExpectedLabels(' + JSON.stringify(labels) + ')';
 }
 
@@ -182,13 +187,7 @@ function gaugeLabelScript(expected) {
  * @returns {string}
  */
 function gaugeFillScript(fills) {
-  const body = {
-    files: unitFill(fills && fills.files) == null ? 0 : unitFill(fills.files),
-    cache: !fills || fills.cache == null ? null : unitFill(fills.cache),
-    objects: unitFill(fills && fills.objects) == null ? 0 : unitFill(fills.objects),
-    modules: unitFill(fills && fills.modules) == null ? 0 : unitFill(fills.modules),
-    scene: unitFill(fills && fills.scene) == null ? 0 : unitFill(fills.scene),
-  };
+  const body = gaugeMaps(null, fills).fills;
   return 'window.__flcGauges&&window.__flcGauges.setFills(' + JSON.stringify(body) + ')';
 }
 

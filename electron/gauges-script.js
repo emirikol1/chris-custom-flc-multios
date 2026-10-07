@@ -45,9 +45,23 @@ function buildGaugesScript(options) {
     // clockwise from 12), sweeps clockwise over the top, ends at 3 o'clock
     // (90deg). 210deg of arc, so large-arc 1, sweep 1 in SVG y-down coords.
     var ARC = 'M 22.02 55 A 30 30 0 1 1 78 40';
-    var KEYS = ['files', 'cache', 'objects', 'modules', 'scene'];
-    // Gauges that measure join progress (cache hit % is a ratio, not progress).
-    var PROGRESS_KEYS = ['files', 'objects', 'modules', 'scene'];
+    // Ids come from G, the same records that stamp each dial's label.
+    // Cache hit % is a ratio, so it stays out of the overall progress average.
+    var KEYS = [];
+    var PROGRESS_KEYS = [];
+    var targets = {};
+    var shown = {};
+    var expectText = {};
+    var keyi = 0;
+    var keyId = '';
+    for (keyi = 0; keyi < G.length; keyi++) {
+      keyId = G[keyi].id;
+      KEYS.push(keyId);
+      if (keyId !== 'cache') PROGRESS_KEYS.push(keyId);
+      targets[keyId] = keyId === 'cache' ? null : 0;
+      shown[keyId] = keyId === 'cache' ? null : 0;
+      expectText[keyId] = '';
+    }
     var LED_H = 56;
     // Below this row width the five dials no longer fit on one line.
     var NARROW_W = 520;
@@ -55,9 +69,6 @@ function buildGaugesScript(options) {
     var led = null;
     var sizer = null;
     var narrow = false;
-    var targets = { files: 0, cache: null, objects: 0, modules: 0, scene: 0 };
-    var shown = { files: 0, cache: null, objects: 0, modules: 0, scene: 0 };
-    var expectText = { files: '', cache: '', objects: '', modules: '', scene: '' };
     var slots = [];
     var observer = null;
     var watching = false;
@@ -244,7 +255,7 @@ function buildGaugesScript(options) {
       item.appendChild(label);
       item.appendChild(expect);
       row.appendChild(item);
-      return { id: def.id, label: def.label, item: item, fill: fill, text: text, expect: expect };
+      return { id: def.id, label: def.label, nameEl: label, item: item, fill: fill, text: text, expect: expect };
     }
 
     function makeLed(row) {
@@ -332,8 +343,10 @@ function buildGaugesScript(options) {
         }
         slot.fill.setAttribute('stroke', color);
         slot.fill.setAttribute('stroke-dasharray', dash);
+        slot.fill.setAttribute('stroke-dashoffset', '0');
         slot.text.textContent = text;
         slot.text.setAttribute('fill', color);
+        if (slot.nameEl) slot.nameEl.textContent = slot.label;
         slot.item.setAttribute('aria-label', slot.label + ' ' + text);
       }
       try { paintLed(); } catch (e2) {}
@@ -609,33 +622,37 @@ function buildGaugesScript(options) {
       return text;
     }
 
+    function slotById(id) {
+      var i = 0;
+      for (i = 0; i < slots.length; i++) {
+        if (slots[i] && slots[i].id === id) return slots[i];
+      }
+      return null;
+    }
+
     function setExpectedLabels(labels) {
       var i = 0;
       var key = '';
+      var slot = null;
       if (!labels || typeof labels !== 'object') return;
       for (i = 0; i < KEYS.length; i++) {
         key = KEYS[i];
         if (!Object.prototype.hasOwnProperty.call(labels, key)) continue;
         expectText[key] = cleanExpect(labels[key]);
-      }
-      for (i = 0; i < slots.length; i++) {
-        slots[i].expect.textContent = expectText[slots[i].id] || '';
+        slot = slotById(key);
+        if (slot && slot.expect) slot.expect.textContent = expectText[key] || '';
       }
     }
 
     function resetNumbers() {
       var i = 0;
-      targets.files = 0;
-      targets.cache = null;
-      targets.objects = 0;
-      targets.modules = 0;
-      targets.scene = 0;
-      shown.files = 0;
-      shown.cache = null;
-      shown.objects = 0;
-      shown.modules = 0;
-      shown.scene = 0;
-      for (i = 0; i < KEYS.length; i++) expectText[KEYS[i]] = '';
+      var id = '';
+      for (i = 0; i < KEYS.length; i++) {
+        id = KEYS[i];
+        targets[id] = id === 'cache' ? null : 0;
+        shown[id] = id === 'cache' ? null : 0;
+        expectText[id] = '';
+      }
     }
 
     function destroy() {

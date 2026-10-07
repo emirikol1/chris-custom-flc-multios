@@ -4,6 +4,7 @@ import {
   GAUGES,
   computeFills,
   expectedTotals,
+  gaugeBinding,
   gaugeColor,
   monotonic,
 } from '../electron/join-gauges.js';
@@ -380,6 +381,31 @@ describe('monotonic', () => {
     monotonic(prev, next);
     expect(JSON.stringify(prev)).toBe(prevJson);
     expect(JSON.stringify(next)).toBe(nextJson);
+  });
+});
+
+describe('gaugeBinding', () => {
+  it('keeps each fill and caption on its own gauge id', () => {
+    const bound = gaugeBinding(
+      { files: 0.25, cache: 0.75, objects: 0.1, modules: 0.4, scene: 0.6 },
+      { requests: 101, docs: 303, packages: 404, textures: 505 },
+    );
+    expect(Object.keys(bound)).toEqual(['files', 'cache', 'objects', 'modules', 'scene']);
+    expect(bound.files).toEqual({ fill: 0.25, label: 101 });
+    expect(bound.cache).toEqual({ fill: 0.75, label: null });
+    expect(bound.objects).toEqual({ fill: 0.1, label: 303 });
+    expect(bound.modules).toEqual({ fill: 0.4, label: 404 });
+    expect(bound.scene).toEqual({ fill: 0.6, label: 505 });
+    expect(gaugeBinding(
+      { cache: null, scene: 2, files: -1 },
+      { requests: Number.NaN, docs: Number.POSITIVE_INFINITY },
+    )).toEqual({
+      files: { fill: 0, label: null },
+      cache: { fill: null, label: null },
+      objects: { fill: 0, label: null },
+      modules: { fill: 0, label: null },
+      scene: { fill: 1, label: null },
+    });
   });
 });
 

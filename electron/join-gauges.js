@@ -512,6 +512,38 @@ function monotonic(prevFills, nextFills) {
   return out;
 }
 
+/** Expected-caption field on a history total, keyed by gauge id. Cache has none. */
+const LABEL_FIELDS = Object.freeze({
+  files: 'requests',
+  objects: 'docs',
+  modules: 'packages',
+  scene: 'textures',
+});
+
+/**
+ * Fill and expected caption for every gauge, keyed by gauge id.
+ * A missing progress fill is 0. A missing cache fill stays null.
+ * @param {unknown} fills
+ * @param {unknown} expected
+ * @returns {Record<string, { fill: number | null, label: number | null }>}
+ */
+function gaugeBinding(fills, expected) {
+  const srcF = isPlain(fills) ? fills : {};
+  const srcE = isPlain(expected) ? expected : {};
+  /** @type {Record<string, { fill: number | null, label: number | null }>} */
+  const out = {};
+  for (let i = 0; i < GAUGES.length; i += 1) {
+    const id = GAUGES[i].id;
+    const field = LABEL_FIELDS[id];
+    let fill = unit(srcF[id]);
+    if (id !== 'cache' && fill == null) fill = 0;
+    let label = null;
+    if (field && typeof srcE[field] === 'number' && Number.isFinite(srcE[field])) label = srcE[field];
+    out[id] = { fill, label };
+  }
+  return out;
+}
+
 /**
  * @param {string} hex
  * @returns {[number, number, number]}
@@ -620,5 +652,6 @@ module.exports = {
   expectedTotals,
   computeFills,
   monotonic,
+  gaugeBinding,
   gaugeColor,
 };

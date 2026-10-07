@@ -8,12 +8,15 @@
   </head>
   <body>
     <main class="card">
-      <h1>Connecting…</h1>
-      <p>This server's configuration could be optimized to improve client performance. While connecting, the client re-checks about a thousand unchanged files before the loading screen can appear, which is why this window stays dark for a little while.</p>
-      <p>If you want, you can copy the message below for the server admin to review.</p>
+      <h1>Still connecting…</h1>
+      <div class="busy" aria-hidden="true"><span></span></div>
+      <p>We're still connecting to the server and loading the game. This normally takes 15–20 seconds here.</p>
+      <p>This delay could be shortened: the server's configuration could be optimized to improve client performance. If you want, copy the message below for the server admin to review.</p>
       <pre id="preview" class="preview">Loading the message…</pre>
-      <button type="button" id="copy">Copy message for the server admin</button>
-      <p class="dismiss-row"><a href="#" id="dismiss">Don't show again for this server</a></p>
+      <div class="actions">
+        <button type="button" id="copy">Copy message for the server admin</button>
+        <a href="#" id="dismiss">Don't show again for this server</a>
+      </div>
     </main>
     <script src="load-notice.js"></script>
   </body>
