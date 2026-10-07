@@ -119,8 +119,9 @@ describe('createCrashReport', () => {
       reason: 'oom',
       exitCode: -9,
     })).toBe(true);
-    const mode = fs.statSync(filePath).mode & 0o777;
-    expect(mode).toBe(0o600);
+    if (process.platform !== 'win32') {
+      expect(fs.statSync(filePath).mode & 0o777).toBe(0o600);
+    }
     const lines = fs.readFileSync(filePath, 'utf8').trim().split('\n');
     expect(lines.length).toBeGreaterThanOrEqual(1);
     const current = lines.map((line) => JSON.parse(line));
