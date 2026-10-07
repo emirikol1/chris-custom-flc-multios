@@ -22,6 +22,12 @@ function lastMenu(Menu) {
   return calls[calls.length - 1][0];
 }
 
+function menuShape(template) {
+  return JSON.parse(JSON.stringify(template, (_key, value) => (
+    typeof value === 'function' ? 'fn' : value
+  )));
+}
+
 describe('createMenuPlacement on darwin', () => {
   it('sets the application menu to the game menu on game focus and the plain menu on other windows', () => {
     const Menu = fakeMenuApi();
@@ -38,7 +44,7 @@ describe('createMenuPlacement on darwin', () => {
     expect(lastMenu(Menu)).toBe(gameMenu);
 
     placement.onFocus(other);
-    expect(lastMenu(Menu).template).toEqual(plainAppMenuTemplate());
+    expect(menuShape(lastMenu(Menu).template)).toEqual(menuShape(plainAppMenuTemplate()));
     expect(JSON.stringify(lastMenu(Menu).template)).not.toMatch(/Highlight|full-refresh|diagnostics|center-prompts/);
   });
 
@@ -62,7 +68,7 @@ describe('createMenuPlacement on darwin', () => {
 
     placement.installForWindow(game, gameMenu);
     placement.onClosed(game);
-    expect(lastMenu(Menu).template).toEqual(plainAppMenuTemplate());
+    expect(menuShape(lastMenu(Menu).template)).toEqual(menuShape(plainAppMenuTemplate()));
   });
 
   it('keeps the other game window menu when a background game window closes', () => {
@@ -80,11 +86,27 @@ describe('createMenuPlacement on darwin', () => {
     expect(lastMenu(Menu)).toBe(frontMenu);
   });
 
+  it('runs Bring All to Front from the plain menu with the focused window', () => {
+    const seen = [];
+    const Menu = fakeMenuApi();
+    const from = { id: 'join' };
+    const placement = createMenuPlacement({
+      platform: 'darwin',
+      Menu,
+      bringAllToFront: (win) => seen.push(win),
+    });
+    placement.setPlain();
+    const item = lastMenu(Menu).template.find((entry) => entry.label === 'View')
+      .submenu.find((entry) => entry.id === 'bring-all-to-front');
+    item.click(null, from);
+    expect(seen).toEqual([from]);
+  });
+
   it('setPlain installs the plain menu', () => {
     const Menu = fakeMenuApi();
     const placement = createMenuPlacement({ platform: 'darwin', Menu });
     placement.setPlain();
-    expect(lastMenu(Menu).template).toEqual(plainAppMenuTemplate());
+    expect(menuShape(lastMenu(Menu).template)).toEqual(menuShape(plainAppMenuTemplate()));
   });
 });
 

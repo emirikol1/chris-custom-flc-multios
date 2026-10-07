@@ -22,6 +22,7 @@ const { PROMPT_GLOW_COLORS, normalizePromptGlow, normalizePromptGlowStrength } =
  *   onFullRefresh?: () => void,
  *   verboseLogging?: boolean,
  *   onOpenWorldStats?: () => void,
+ *   bringAllToFront?: (win?: object) => void,
  *   onToggleVerboseLogging?: (enabled: boolean) => void,
  *   onOpenLogs?: () => void,
  *   onOpenProblemLog?: () => void,
@@ -44,6 +45,7 @@ function gameWindowMenuTemplate({
   onPickPromptGlowStrength,
   onFullRefresh,
   onOpenWorldStats,
+  bringAllToFront,
   onToggleVerboseLogging,
   onOpenLogs,
   onOpenProblemLog,
@@ -88,6 +90,7 @@ function gameWindowMenuTemplate({
                 if (typeof onOpenWorldStats === 'function') onOpenWorldStats();
               },
             },
+            bringAllToFrontMenuItem(bringAllToFront),
             { type: 'separator' },
             {
               id: 'verbose-logging',
@@ -203,9 +206,10 @@ function gameWindowMenuTemplate({
 /**
  * macOS menu for the join window and every other non-game window.
  * Prompt, glow, and diagnostics items stay on the game menu only.
+ * @param {{ bringAllToFront?: (win?: object) => void }} [opts]
  * @returns {Array<object>}
  */
-function plainAppMenuTemplate() {
+function plainAppMenuTemplate({ bringAllToFront } = {}) {
   return [
     { role: 'appMenu' },
     { role: 'editMenu' },
@@ -219,10 +223,27 @@ function plainAppMenuTemplate() {
         { role: 'zoomOut' },
         { type: 'separator' },
         { role: 'toggleDevTools' },
+        { type: 'separator' },
+        bringAllToFrontMenuItem(bringAllToFront),
       ],
     },
     { role: 'windowMenu' },
   ];
+}
+
+/**
+ * @param {(win?: object) => void} [bringAllToFront]
+ * @returns {object}
+ */
+function bringAllToFrontMenuItem(bringAllToFront) {
+  return {
+    id: 'bring-all-to-front',
+    label: 'Bring All FLC Windows to Front',
+    accelerator: 'CmdOrCtrl+Shift+U',
+    click(_menuItem, browserWindow) {
+      if (typeof bringAllToFront === 'function') bringAllToFront(browserWindow);
+    },
+  };
 }
 
 /**

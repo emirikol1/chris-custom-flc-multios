@@ -43,7 +43,24 @@ const {
 } = require('./center-prompts');
 const { gameWindowMenuTemplate } = require('./game-menu');
 const { createMenuPlacement } = require('./menu-placement');
-const menuPlacement = createMenuPlacement({ platform: process.platform, Menu });
+const { bringAllToFront } = require('./bring-to-front');
+
+/**
+ * Restore and raise every FLC window. The window the command came from ends in front.
+ * @param {import('electron').BrowserWindow | null | undefined} fromWin
+ */
+function raiseAllFlcWindows(fromWin) {
+  const focus = fromWin && typeof fromWin.isDestroyed === 'function' && !fromWin.isDestroyed()
+    ? fromWin
+    : null;
+  bringAllToFront(BrowserWindow.getAllWindows(), focus);
+}
+
+const menuPlacement = createMenuPlacement({
+  platform: process.platform,
+  Menu,
+  bringAllToFront: raiseAllFlcWindows,
+});
 /** @type {WeakSet<import('electron').BrowserWindow>} */
 const menuCloseBound = new WeakSet();
 /** @type {WeakMap<import('electron').BrowserWindow, import('electron').BrowserWindow>} */
@@ -495,6 +512,7 @@ function installGameMenu(win) {
     onOpenWorldStats: () => {
       openStatsFor(win);
     },
+    bringAllToFront: (fromWin) => raiseAllFlcWindows(fromWin || win),
     onToggleVerboseLogging: (next) => {
       try {
         setLogLevel(next ? 'debug' : 'info');

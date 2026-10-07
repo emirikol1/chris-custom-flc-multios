@@ -1,6 +1,10 @@
-# v0.5.6
+# v0.5.7
 
 Chris's Custom FLC MultiOS — Foundry VTT join client for Windows, macOS, and Linux.
+
+## What's new in 0.5.7
+
+- **Bring All FLC Windows to Front.** View → Diagnostics on the game window, and View on every other window (Ctrl+Shift+U or Cmd+Shift+U). Restores minimized FLC windows and raises every FLC window, leaving the window you ran the command from in front.
 
 ## What's new in 0.5.6
 

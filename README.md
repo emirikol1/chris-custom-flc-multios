@@ -22,6 +22,7 @@ Each install starts with an **empty server list** — no servers are bundled or 
 - **Forget layout** button per server (expanded list) clears that session's remembered layout and prompt appearance if a bad one is blocking your connection
 - **Prompt windows always on main window** (game window View menu, on by default): short-lived prompts open centered in the game window. Sheets, journals, and the combat tracker stay put
 - **Highlight Prompts** (View submenu): glow color, glow strength (0–300%, default 100%), and **Auto-Raise**. Saved on that server profile when you change them; Clone copies them; Forget layout returns them to the defaults
+- **Bring All FLC Windows to Front** (game window **View → Diagnostics**, and **View** on every other window; Ctrl+Shift+U or Cmd+Shift+U): restores minimized FLC windows and raises every FLC window, leaving the window you ran the command from in front
 - A prompt raises the window it opened in, or flashes the usual operating-system attention when Auto-Raise is off. The game window also raises itself shortly after it opens and does not stay pinned on top
 
 ### Rendering & compatibility

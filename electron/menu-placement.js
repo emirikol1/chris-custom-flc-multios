@@ -14,6 +14,7 @@ const { plainAppMenuTemplate } = require('./game-menu');
  *     setApplicationMenu: (menu: unknown) => void,
  *     buildFromTemplate: (template: unknown[]) => unknown,
  *   },
+ *   bringAllToFront?: (win?: object) => void,
  * }} opts
  * @returns {{
  *   installForWindow: (win: { setMenu?: (menu: unknown) => void, isFocused?: () => boolean }, menu: unknown) => void,
@@ -22,14 +23,14 @@ const { plainAppMenuTemplate } = require('./game-menu');
  *   setPlain: () => void,
  * }}
  */
-function createMenuPlacement({ platform, Menu }) {
+function createMenuPlacement({ platform, Menu, bringAllToFront }) {
   /** @type {Map<object, unknown>} */
   const menus = new Map();
   /** @type {object | null} */
   let active = null;
 
   function plainMenu() {
-    return Menu.buildFromTemplate(plainAppMenuTemplate());
+    return Menu.buildFromTemplate(plainAppMenuTemplate({ bringAllToFront }));
   }
 
   return {

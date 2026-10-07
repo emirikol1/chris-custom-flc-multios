@@ -130,6 +130,7 @@ describe('game window View menu', () => {
     expect(view.submenu.indexOf(refresh)).toBeLessThan(view.submenu.indexOf(menu));
     expect(menu.submenu.map((item) => item.id).filter(Boolean)).toEqual([
       'world-stats',
+      'bring-all-to-front',
       'verbose-logging',
       'open-logs',
       'open-problem-log',
@@ -164,6 +165,26 @@ describe('game window View menu', () => {
       })).not.toThrow();
   });
 
+  it('puts Bring All FLC Windows to Front after World Statistics', () => {
+    const seen = [];
+    const from = { id: 'game' };
+    const template = gameWindowMenuTemplate({
+      bringAllToFront: (win) => seen.push(win),
+    });
+    const diagnostics = viewMenu(template).submenu.find((item) => item.id === 'diagnostics');
+    const stats = diagnostics.submenu.find((item) => item.id === 'world-stats');
+    const bring = diagnostics.submenu.find((item) => item.id === 'bring-all-to-front');
+    expect(bring.label).toBe('Bring All FLC Windows to Front');
+    expect(bring.accelerator).toBe('CmdOrCtrl+Shift+U');
+    expect(diagnostics.submenu.indexOf(bring)).toBe(diagnostics.submenu.indexOf(stats) + 1);
+    expect(diagnostics.submenu[diagnostics.submenu.indexOf(bring) + 1]).toEqual({ type: 'separator' });
+    bring.click(null, from);
+    expect(seen).toEqual([from]);
+    expect(() => gameWindowMenuTemplate().find((item) => item.label === 'View')
+      .submenu.find((item) => item.id === 'diagnostics')
+      .submenu.find((item) => item.id === 'bring-all-to-front').click()).not.toThrow();
+  });
+
   it('prepends the Apple menu only when the platform is darwin', () => {
     expect(gameWindowMenuTemplate({ platform: 'darwin' })[0]).toEqual({ role: 'appMenu' });
     expect(gameWindowMenuTemplate({ platform: 'darwin' })[1]).toEqual({ role: 'fileMenu' });
@@ -196,5 +217,25 @@ describe('plain application menu', () => {
     expect(dumped).not.toContain('diagnostics');
     expect(dumped).not.toContain('center-prompts');
     expect(dumped).not.toContain('forceReload');
+  });
+
+  it('adds Bring All FLC Windows to Front at the end of View', () => {
+    const seen = [];
+    const from = { id: 'join' };
+    const template = plainAppMenuTemplate({
+      bringAllToFront: (win) => seen.push(win),
+    });
+    const view = template.find((item) => item.label === 'View');
+    const bring = view.submenu.find((item) => item.id === 'bring-all-to-front');
+    const devtools = view.submenu.find((item) => item.role === 'toggleDevTools');
+    expect(bring.label).toBe('Bring All FLC Windows to Front');
+    expect(bring.accelerator).toBe('CmdOrCtrl+Shift+U');
+    expect(view.submenu.indexOf(bring)).toBe(view.submenu.length - 1);
+    expect(view.submenu[view.submenu.indexOf(bring) - 1]).toEqual({ type: 'separator' });
+    expect(view.submenu.indexOf(bring)).toBeGreaterThan(view.submenu.indexOf(devtools));
+    bring.click(null, from);
+    expect(seen).toEqual([from]);
+    expect(() => plainAppMenuTemplate().find((item) => item.label === 'View')
+      .submenu.find((item) => item.id === 'bring-all-to-front').click()).not.toThrow();
   });
 });
