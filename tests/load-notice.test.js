@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
+function readRoot(name) {
+  return readFileSync(new URL(`../${name}`, import.meta.url), 'utf8');
+}
+
 function read(name) {
   return readFileSync(new URL(`../src/${name}`, import.meta.url), 'utf8');
 }
@@ -22,5 +26,13 @@ describe('connecting notice', () => {
     expect(css).toContain('justify-content: space-between');
     expect(css).toContain('prefers-reduced-motion');
     expect(css).toContain('flc-connect-bar');
+    expect(css).toContain('background: #000000');
+    expect(css).toContain('color: #e8e4d8');
+    expect(css).toContain('color: #f6d98a');
+    expect(css).not.toContain('#161818');
+    expect(css).not.toContain('#1e2121');
+    const win = readRoot('electron/load-notice-window.js');
+    expect(win).toContain("backgroundColor: '#000000'");
+    expect(win).not.toContain('#161818');
   });
 });

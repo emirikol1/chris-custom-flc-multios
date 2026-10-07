@@ -2,13 +2,52 @@
 
 /**
  * Page script for the Loading banner on the join card. The returned string is
- * ES5 and is safe to run on its own at dom-ready. Caller options are ignored
- * so nothing from main is interpolated. The only media address in the script
- * is the fixed flc-media constant below; playback math is the same rateFor().
+ * ES5 and is safe to run on its own at dom-ready. The only media address in
+ * the script is the one clip URL the caller already chose. Playback math is
+ * the same rateFor().
  */
 
+const { MEDIA_URLS } = require('./media-protocol');
+
 const CLIP_MS = 10433;
-const MEDIA_URL = 'flc-media://app/loading-dragon.mp4';
+
+/**
+ * One allow-listed clip URL. Anything else becomes the first clip, so a
+ * caller cannot interpolate an arbitrary string into the page.
+ * @param {unknown} mediaUrl
+ * @returns {string}
+ */
+function clipForScript(mediaUrl) {
+  if (typeof mediaUrl === 'string' && MEDIA_URLS.indexOf(mediaUrl) !== -1) return mediaUrl;
+  return MEDIA_URLS[0];
+}
+
+/**
+ * Pick one URL for this injection. random01 is a number in [0, 1] or a
+ * function that returns one. Omitted calls Math.random once.
+ * @param {unknown} urls
+ * @param {unknown} [random01]
+ * @returns {string}
+ */
+function pickLoadingClip(urls, random01) {
+  const list = [];
+  if (Array.isArray(urls)) {
+    for (let i = 0; i < urls.length; i += 1) {
+      if (typeof urls[i] === 'string' && urls[i].length > 0) list.push(urls[i]);
+    }
+  }
+  if (list.length === 0) return '';
+  let roll = random01;
+  if (typeof roll === 'function') roll = roll();
+  else if (roll == null) roll = Math.random();
+  if (typeof roll !== 'number' || Number.isFinite(roll) !== true) roll = 0;
+  if (roll < 0) roll = 0;
+  if (roll > 1) roll = 1;
+  let index = Math.floor(roll * list.length);
+  if (index >= list.length) index = list.length - 1;
+  if (index < 0) index = 0;
+  return list[index];
+}
 
 /**
  * playbackRate so the remaining clip covers the remaining join time.
@@ -34,18 +73,18 @@ function rateFor(clipLeftMs, remainingMs) {
 
 /**
  * Install window.__flcLoadingVideo (the Loading banner) on the Foundry page.
- * @param {object} [options] ignored
+ * @param {unknown} [mediaUrl] one allow-listed flc-media URL
  * @returns {string}
  */
-function buildLoadingVideoScript(options) {
-  void options;
+function buildLoadingVideoScript(mediaUrl) {
+  const clip = clipForScript(mediaUrl);
   const body = `(function () {
   'use strict';
   try {
     if (window.__flcLoadingVideo) return;
     __RATE_FOR__
     var CLIP_MS = 10433;
-    var MEDIA = 'flc-media://app/loading-dragon.mp4';
+    var MEDIA = '${clip}';
     var anchor = 0;
     var haveAnchor = false;
     var typicalMs = 0;
@@ -63,6 +102,7 @@ function buildLoadingVideoScript(options) {
     var videoQueued = false;
     var bannerShown = false;
     var paintedRoot = null;
+    var paintedHost = null;
     var sizeObserver = null;
     var onWindowResize = null;
     var MIN_CARD_PX = 520;
@@ -77,15 +117,16 @@ function buildLoadingVideoScript(options) {
     }
 
     function cssText() {
-      return '#flc-loading-video{box-sizing:border-box;display:block;position:relative;width:100%;height:auto;aspect-ratio:960 / 424;margin:0 0 8px;padding:0;border-radius:8px;overflow:hidden;pointer-events:none;opacity:1;background:#161818;box-shadow:inset 0 0 0 1px rgba(0,0,0,.35),inset 0 0 36px rgba(0,0,0,.28)}'
+      return '#flc-loading-video{box-sizing:border-box;display:block;position:relative;width:100%;height:auto;aspect-ratio:960 / 444;margin:0 0 8px;padding:0;border-radius:8px;overflow:hidden;pointer-events:none;opacity:1;background:#000000;box-shadow:inset 0 0 0 1px rgba(0,0,0,.35),inset 0 0 36px rgba(0,0,0,.28)}'
         + '#flc-loading-video.flc-lv-on{opacity:1}'
         + '#flc-loading-video.flc-lv-off{display:none}'
-        + '#flc-loading-video video{display:block;width:100%;height:100%;object-fit:cover;border:0;border-radius:8px;background:#161818}'
-        + '#flc-loading-video:after{content:"";position:absolute;left:0;right:0;bottom:0;height:40px;pointer-events:none;background:linear-gradient(to bottom,rgba(22,24,24,0),#161818)}'
-        + '#fvtt-loading-progress.flc-lb-on{background:#161818}'
-        + '#fvtt-loading-progress.flc-lb-on .flp-card{background:#161818}'
-        + '.flc-lb-on{background:#161818}'
-        + '.flc-lb-on .flp-card{background:#161818}';
+        + '#flc-loading-video video{display:block;width:100%;height:100%;object-fit:cover;border:0;border-radius:8px;background:#000000}'
+        + '#flc-loading-video:after{content:"";position:absolute;left:0;right:0;bottom:0;height:40px;pointer-events:none;background:linear-gradient(to bottom,rgba(0,0,0,0),#000000)}'
+        + '#fvtt-loading-progress.flc-lb-on{background:#000000 !important}'
+        + '#fvtt-loading-progress.flc-lb-on .flp-card{background:#000000 !important}'
+        + '.flc-lb-on{background:#000000 !important}'
+        + '.flc-lb-on .flp-card{background:#000000 !important}'
+        + '#fvtt-loading-progress .flp-card.flc-lb-on{background:#000000 !important}';
     }
 
     function ensureStyle() {
@@ -241,7 +282,7 @@ function buildLoadingVideoScript(options) {
     function classParts(el) {
       var raw = '';
       try { raw = el.getAttribute('class') || ''; } catch (e) { raw = ''; }
-      return String(raw).split(/\s+/);
+      return String(raw).split(/\\s+/);
     }
 
     function tokenOn(el, token, on) {
@@ -295,10 +336,34 @@ function buildLoadingVideoScript(options) {
         tokenOn(paintedRoot, 'flc-lb-on', false);
         paintedRoot = null;
       }
+      if (paintedHost) {
+        tokenOn(paintedHost, 'flc-lb-on', false);
+        paintedHost = null;
+      }
       try { root = document.getElementById('fvtt-loading-progress'); } catch (e) { root = null; }
       if (root) tokenOn(root, 'flc-lb-on', false);
       try { root = overlayRoot(); } catch (e2) { root = null; }
       if (root) tokenOn(root, 'flc-lb-on', false);
+    }
+
+    function gaugeHost(card) {
+      var gauges = null;
+      if (!card) return null;
+      try { gauges = card.querySelector('#flc-gauges'); } catch (e) { gauges = null; }
+      if (gauges && gauges.parentNode && gauges.parentNode.nodeType === 1) return gauges.parentNode;
+      return card;
+    }
+
+    function paintGaugeHost(card, on) {
+      var host = null;
+      if (on === true) host = gaugeHost(card);
+      if (paintedHost && paintedHost !== host) {
+        tokenOn(paintedHost, 'flc-lb-on', false);
+        paintedHost = null;
+      }
+      if (!host) return;
+      tokenOn(host, 'flc-lb-on', true);
+      paintedHost = host;
     }
 
     function cardWidth(card) {
@@ -355,6 +420,7 @@ function buildLoadingVideoScript(options) {
       }
       paintBox(box);
       try { paintOverlay(overlayNode(card), bannerShown === true); } catch (e4) {}
+      try { paintGaugeHost(card, bannerShown !== true); } catch (e5) {}
     }
 
     function watchSize(card) {
@@ -846,7 +912,7 @@ function buildLoadingVideoScript(options) {
 
 module.exports = {
   CLIP_MS,
-  MEDIA_URL,
+  pickLoadingClip,
   rateFor,
   buildLoadingVideoScript,
 };

@@ -1,7 +1,7 @@
 html, body {
   margin: 0;
   height: 100%;
-  background: #161818;
+  background: #000000;
   color: #e8e4d8;
   font: 16px/1.45 "Segoe UI", sans-serif;
 }
@@ -16,7 +16,8 @@ body {
 
 .card {
   width: min(40rem, 100%);
-  background: #1e2121;
+  background: #000000;
+  color: #e8e4d8;
   border: 1px solid #3a4038;
   border-radius: 12px;
   padding: 1.25rem 1.35rem 1rem;

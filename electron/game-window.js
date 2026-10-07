@@ -12,8 +12,8 @@ const { createBadUrlStore, shouldRecordFailure, formatBadUrlsText, failurePathna
 const { formatBytes, percentile, liveFromSnapshot } = require('./join-telemetry');
 const { buildGaugesScript } = require('./gauges-script');
 const slowCache = require('./slow-cache-runtime');
-const { buildLoadingVideoScript } = require('./loading-video-script');
-const { attachMediaProtocol } = require('./media-protocol');
+const { buildLoadingVideoScript, pickLoadingClip } = require('./loading-video-script');
+const { attachMediaProtocol, MEDIA_URLS } = require('./media-protocol');
 const { expectedTotals, computeFills, monotonic, GAUGES, gaugeBinding } = require('./join-gauges');
 const { getLogsDir, getDataDir } = require('./paths');
 const { buildTroubleshootingReport } = require('./ts-report');
@@ -2651,7 +2651,8 @@ function openGameWindow(payload, gpuPrefsPath) {
       buildGaugesScript() + ';try{window.__flcGaugeSeq=' + scriptInt(ctx.loadSeq) + ';}catch(e){}'
     ).catch(() => {});
     if (bannerOn) {
-      win.webContents.executeJavaScript(buildLoadingVideoScript()).then(() => {
+      const clip = pickLoadingClip(MEDIA_URLS);
+      win.webContents.executeJavaScript(buildLoadingVideoScript(clip)).then(() => {
         try { pushVideoJoin(); } catch { /* ignore */ }
       }).catch(() => {});
     }

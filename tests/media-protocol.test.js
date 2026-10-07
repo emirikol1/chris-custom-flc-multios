@@ -3,8 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  MEDIA_FILE,
-  MEDIA_URL,
+  MEDIA_FILES,
+  MEDIA_URLS,
   SCHEME,
   attachMediaProtocol,
   createMediaHandler,
@@ -20,10 +20,16 @@ import {
 describe('resolveMediaPath', () => {
   const dir = path.join(os.tmpdir(), 'flc-media-allow');
 
-  it('allows only the one loading clip inside the media directory', () => {
-    expect(MEDIA_URL).toBe('flc-media://app/loading-dragon.mp4');
-    expect(resolveMediaPath(MEDIA_URL, dir)).toBe(path.join(path.resolve(dir), MEDIA_FILE));
-    expect(resolveMediaPath(MEDIA_URL, dir + path.sep)).toBe(path.join(path.resolve(dir), MEDIA_FILE));
+  it('allows only the two loading clips inside the media directory', () => {
+    expect(MEDIA_URLS).toEqual([
+      'flc-media://app/loading-dragon-1.mp4',
+      'flc-media://app/loading-dragon-2.mp4',
+    ]);
+    expect(MEDIA_FILES).toEqual(['loading-dragon-1.mp4', 'loading-dragon-2.mp4']);
+    for (let i = 0; i < MEDIA_URLS.length; i += 1) {
+      expect(resolveMediaPath(MEDIA_URLS[i], dir)).toBe(path.join(path.resolve(dir), MEDIA_FILES[i]));
+      expect(resolveMediaPath(MEDIA_URLS[i], dir + path.sep)).toBe(path.join(path.resolve(dir), MEDIA_FILES[i]));
+    }
   });
 
   it('rejects every other address, including traversal and query strings', () => {
@@ -37,6 +43,9 @@ describe('resolveMediaPath', () => {
       'flc-media://app/loading-dragon.mp4#frag',
       'flc-media://evil/loading-dragon.mp4',
       'flc-media://app/other.mp4',
+      'flc-media://app/loading-dragon.mp4',
+      'flc-media://app/loading-dragon-1.mp4 ',
+      'flc-media://app/loading-dragon-3.mp4',
       'flc-media://app/loading-dragon.mp4/',
       'flc-media://app//loading-dragon.mp4',
       'flc-media://user:pass@app/loading-dragon.mp4',
@@ -51,17 +60,21 @@ describe('resolveMediaPath', () => {
       expect(resolveMediaPath(rejected[i], dir)).toBeNull();
     }
     expect(resolveMediaPath(null, dir)).toBeNull();
-    expect(resolveMediaPath(MEDIA_URL, '')).toBeNull();
-    expect(resolveMediaPath(MEDIA_URL, null)).toBeNull();
+    expect(resolveMediaPath(MEDIA_URLS[0], '')).toBeNull();
+    expect(resolveMediaPath(MEDIA_URLS[0], null)).toBeNull();
+    expect(resolveMediaPath(MEDIA_URLS[1], '')).toBeNull();
   });
 
-  it('points at the bundled file, which stays a small mp4', () => {
-    const resolved = resolveMediaPath(MEDIA_URL, mediaDirPath());
-    expect(resolved).toBe(path.join(mediaDirPath(), MEDIA_FILE));
-    const stat = fs.statSync(resolved);
-    expect(stat.isFile()).toBe(true);
-    expect(stat.size).toBeGreaterThan(1000);
-    expect(stat.size).toBeLessThanOrEqual(400 * 1024);
+  it('points at the bundled clips, which stay small mp4s', () => {
+    expect(fs.existsSync(path.join(mediaDirPath(), 'loading-dragon.mp4'))).toBe(false);
+    for (let i = 0; i < MEDIA_URLS.length; i += 1) {
+      const resolved = resolveMediaPath(MEDIA_URLS[i], mediaDirPath());
+      expect(resolved).toBe(path.join(mediaDirPath(), MEDIA_FILES[i]));
+      const stat = fs.statSync(resolved);
+      expect(stat.isFile()).toBe(true);
+      expect(stat.size).toBeGreaterThan(1000);
+      expect(stat.size).toBeLessThanOrEqual(2 * 1024 * 1024);
+    }
   });
 });
 
@@ -129,18 +142,30 @@ describe('createMediaHandler', () => {
   it('serves only the allow-listed file and honors Range', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flc-media-'));
     const payload = Buffer.from('0123456789');
-    fs.writeFileSync(path.join(dir, MEDIA_FILE), payload);
+    const otherPayload = Buffer.from('abcdefghij');
+    fs.writeFileSync(path.join(dir, MEDIA_FILES[0]), payload);
+    fs.writeFileSync(path.join(dir, MEDIA_FILES[1]), otherPayload);
     const handler = createMediaHandler(dir);
 
-    const full = await handler({ url: MEDIA_URL, headers: new Headers() });
+    const full = await handler({ url: MEDIA_URLS[0], headers: new Headers() });
     expect(full.status).toBe(200);
     expect(full.headers.get('content-type')).toBe('video/mp4');
     expect(full.headers.get('accept-ranges')).toBe('bytes');
     expect(full.headers.get('content-length')).toBe('10');
     expect(Buffer.from(await full.arrayBuffer())).toEqual(payload);
 
+    const second = await handler({ url: MEDIA_URLS[1], headers: new Headers() });
+    expect(second.status).toBe(200);
+    expect(Buffer.from(await second.arrayBuffer())).toEqual(otherPayload);
+
+    const oldClip = await handler({
+      url: 'flc-media://app/loading-dragon.mp4',
+      headers: new Headers(),
+    });
+    expect(oldClip.status).toBe(404);
+
     const slice = await handler({
-      url: MEDIA_URL,
+      url: MEDIA_URLS[0],
       headers: new Headers({ range: 'bytes=2-5' }),
     });
     expect(slice.status).toBe(206);
@@ -157,7 +182,7 @@ describe('createMediaHandler', () => {
     expect(missing.status).toBe(404);
 
     const open = await handler({
-      url: MEDIA_URL,
+      url: MEDIA_URLS[0],
       headers: new Headers({ range: 'bytes=0-' }),
     });
     expect(open.status).toBe(206);
@@ -165,7 +190,7 @@ describe('createMediaHandler', () => {
     expect(Buffer.from(await open.arrayBuffer())).toEqual(payload);
 
     const bad = await handler({
-      url: MEDIA_URL,
+      url: MEDIA_URLS[1],
       headers: new Headers({ range: 'bytes=40-50' }),
     });
     expect(bad.status).toBe(416);

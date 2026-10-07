@@ -88,7 +88,7 @@ function openLoadNotice(gameWin) {
     maximizable: false,
     fullscreenable: false,
     hasShadow: false,
-    backgroundColor: '#161818',
+    backgroundColor: '#000000',
     x: bounds.x,
     y: bounds.y,
     width: bounds.width,

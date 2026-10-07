@@ -75,6 +75,8 @@ When this server has a usual join time, playback waits until the remaining time 
 
 The banner drops out, with no empty gap, when the card is under about 520 pixels wide or the window is under about 560 pixels tall, so the gauges and progress bar still fit. It stays off when the system asks for reduced motion, and it is removed when the loading card closes. The Loading banner is default on. The Join window **Loading banner** checkbox turns it off.
 
+The loading banner randomly plays one of two packaged clips, and the connecting and loading screens stay black.
+
 ## Slow server detection
 
 Some Foundry servers sit behind a reverse proxy that marks package files — scripts, style sheets, fonts, and the same kind of file under the system and module folders — with `Cache-Control: no-cache`, and only speaks HTTP/1.1. Every join then spends about 15–20 seconds re-checking those unchanged files before the loading screen can appear. The game window stays black while that happens.

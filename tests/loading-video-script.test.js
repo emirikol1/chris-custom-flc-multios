@@ -1,9 +1,11 @@
+import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
+import { MEDIA_URLS } from '../electron/media-protocol.js';
 import {
   CLIP_MS,
-  MEDIA_URL,
   buildLoadingVideoScript,
+  pickLoadingClip,
   rateFor,
 } from '../electron/loading-video-script.js';
 
@@ -22,7 +24,8 @@ describe('buildLoadingVideoScript source', () => {
     expect(src).not.toMatch(/\blet /);
     expect(src).not.toMatch(/\bconst /);
     expect(src).not.toContain('muted');
-    expect(src).toContain('#161818');
+    expect(src).toContain('#000000');
+    expect(src).not.toContain('#161818');
     expect(src).toContain('flc-lb-on');
     expect(src).toContain('0.001');
     expect(src).toContain('loadedmetadata');
@@ -38,10 +41,15 @@ describe('buildLoadingVideoScript source', () => {
     expect(src).toContain('setPhase');
     expect(src).toContain('destroy');
     expect(src).toContain('flc-loading-video');
-    expect(src).toContain(MEDIA_URL);
+    expect(src).toContain(MEDIA_URLS[0]);
+    expect(src).not.toContain(MEDIA_URLS[1]);
+    expect(src).not.toContain('loading-dragon.mp4');
+    expect(src.match(/flc-media:\/\//g)).toEqual(['flc-media://']);
     expect(src).toContain(String(CLIP_MS));
     expect(src).toContain('1.6');
-    expect(src).toContain('aspect-ratio:960 / 424');
+    expect(src).toContain('split(/\\s+/)');
+    expect(src).toContain('aspect-ratio:960 / 444');
+    expect(src).not.toContain('960 / 424');
     expect(src).not.toContain('height:268px');
     expect(src).toContain('MIN_CARD_PX = 520');
     expect(src).toContain('MIN_VIEW_PX = 560');
@@ -63,6 +71,57 @@ describe('buildLoadingVideoScript source', () => {
     expect(src).not.toContain('SecretToken');
     expect(src).not.toContain('HiddenName');
     expect(src).toBe(buildLoadingVideoScript());
+    const junk = buildLoadingVideoScript("';alert(1)//");
+    expect(junk).not.toContain('alert');
+    expect(junk).toBe(buildLoadingVideoScript());
+  });
+
+  it('embeds exactly one chosen clip and never the other', () => {
+    const first = buildLoadingVideoScript(MEDIA_URLS[0]);
+    const second = buildLoadingVideoScript(MEDIA_URLS[1]);
+    expect(first.match(/flc-media:\/\/app\/[a-z0-9.-]+/g)).toEqual([MEDIA_URLS[0]]);
+    expect(second.match(/flc-media:\/\/app\/[a-z0-9.-]+/g)).toEqual([MEDIA_URLS[1]]);
+    expect(first).not.toContain('loading-dragon-2.mp4');
+    expect(second).not.toContain('loading-dragon-1.mp4');
+  });
+});
+
+describe('pickLoadingClip', () => {
+  const urls = MEDIA_URLS.slice();
+
+  it('chooses by a number in [0, 1] and clamps the ends', () => {
+    expect(pickLoadingClip(urls, 0)).toBe(urls[0]);
+    expect(pickLoadingClip(urls, 0.49)).toBe(urls[0]);
+    expect(pickLoadingClip(urls, 0.5)).toBe(urls[1]);
+    expect(pickLoadingClip(urls, 0.99)).toBe(urls[1]);
+    expect(pickLoadingClip(urls, 1)).toBe(urls[1]);
+    expect(pickLoadingClip(urls, -1)).toBe(urls[0]);
+    expect(pickLoadingClip(urls, Number.NaN)).toBe(urls[0]);
+    expect(pickLoadingClip(urls, () => 0.75)).toBe(urls[1]);
+    expect(pickLoadingClip([], 0.2)).toBe('');
+    expect(pickLoadingClip(null, 0.2)).toBe('');
+  });
+
+  it('is called once per game-window injection with the allow-list', () => {
+    const src = readFileSync(new URL('../electron/game-window.js', import.meta.url), 'utf8');
+    expect(src).toContain('const clip = pickLoadingClip(MEDIA_URLS);');
+    expect(src).toContain('buildLoadingVideoScript(clip)');
+    expect(src).not.toContain('buildLoadingVideoScript()');
+  });
+
+  it('calls Math.random once when no roll is given', () => {
+    const orig = Math.random;
+    const calls = [];
+    Math.random = () => {
+      calls.push(1);
+      return 0.1;
+    };
+    try {
+      expect(pickLoadingClip(urls)).toBe(urls[0]);
+      expect(calls).toEqual([1]);
+    } finally {
+      Math.random = orig;
+    }
   });
 });
 
@@ -449,7 +508,7 @@ describe('loading clip on the join card', () => {
     expect(box.nextSibling).toBe(host.gauges);
     expect(host.gauges.nextSibling).toBe(host.track);
     expect(host.countBoxes()).toBe(1);
-    expect(host.document.getElementById('flc-lv-style').textContent).toContain('aspect-ratio:960 / 424');
+    expect(host.document.getElementById('flc-lv-style').textContent).toContain('aspect-ratio:960 / 444');
     expect(host.document.getElementById('flc-lv-style').textContent).not.toContain('height:268px');
     expect(host.observers.some((observer) => observer.connected)).toBe(true);
     const live = host.observers.filter((observer) => observer.connected);
@@ -459,7 +518,7 @@ describe('loading clip on the join card', () => {
     host.flushIdle();
     const video = host.video();
     expect(video).toBeTruthy();
-    expect(video.getAttribute('src')).toBe(MEDIA_URL);
+    expect(video.getAttribute('src')).toBe(MEDIA_URLS[0]);
     expect(video.getAttribute('muted')).toBeNull();
     expect(video.getAttribute('playsinline')).toBe('playsinline');
     expect(video.getAttribute('preload')).toBe('auto');
@@ -477,7 +536,8 @@ describe('loading clip on the join card', () => {
     expect(host.api.muted).toBe(false);
     expect(host.api.audio).toBe('pending');
     expect(String(host.root.getAttribute('class') || '')).toContain('flc-lb-on');
-    expect(host.document.getElementById('flc-lv-style').textContent).toContain('#161818');
+    expect(host.document.getElementById('flc-lv-style').textContent).toContain('#000000');
+    expect(host.document.getElementById('flc-lv-style').textContent).not.toContain('#161818');
     expect(box.childNodes).toEqual([video]);
     expect(box.textContent).toBe('');
   });
@@ -574,6 +634,7 @@ describe('loading clip on the join card', () => {
     const box = host.document.getElementById('flc-loading-video');
     expect(box.getAttribute('class')).toBe('flc-lv-off');
     expect(String(host.root.getAttribute('class') || '')).not.toContain('flc-lb-on');
+    expect(String(host.gauges.parentNode.getAttribute('class') || '')).toContain('flc-lb-on');
     expect(host.api.visible).toBe(false);
     expect(host.api.mounted).toBe(true);
     expect(box.nextSibling).toBe(host.gauges);
@@ -603,6 +664,7 @@ describe('loading clip on the join card', () => {
     expect(box.getAttribute('class')).toBe('flc-lv-off');
     expect(video.paused).toBe(true);
     expect(String(host.root.getAttribute('class') || '')).not.toContain('flc-lb-on');
+    expect(String(host.card.getAttribute('class') || '')).toContain('flc-lb-on');
 
     host.setViewHeight(400);
     host.card.clientWidth = 800;
@@ -613,6 +675,7 @@ describe('loading clip on the join card', () => {
     host.relayout();
     expect(box.getAttribute('class')).toBe('flc-lv-on');
     expect(String(host.root.getAttribute('class') || '')).toContain('flc-lb-on');
+    expect(String(host.card.getAttribute('class') || '')).not.toContain('flc-lb-on');
     expect(video.playCalls).toBe(2);
     expect(video.paused).toBe(false);
   });
@@ -625,8 +688,10 @@ describe('loading clip on the join card', () => {
     expect(video.currentTime).toBe(0.001);
     expect(video.readyState).toBeGreaterThanOrEqual(1);
     expect(css).toContain('#fvtt-loading-progress.flc-lb-on');
-    expect(css).toContain('.flp-card{background:#161818}');
-    expect(css).toContain('rgba(22,24,24,0),#161818');
+    expect(css).toContain('.flp-card{background:#000000 !important}');
+    expect(css).toContain('#fvtt-loading-progress .flp-card.flc-lb-on{background:#000000 !important}');
+    expect(css).toContain('rgba(0,0,0,0),#000000');
+    expect(css).not.toContain('#161818');
     expect(String(host.root.getAttribute('class') || '')).toBe('flc-lb-on');
 
     host.api.destroy();

@@ -1,6 +1,12 @@
-# v0.5.7
+# v0.5.8
 
 Chris's Custom FLC MultiOS — Foundry VTT join client for Windows, macOS, and Linux.
+
+## What's new in 0.5.8
+
+- Connecting and loading screens stay black.
+- The loading banner randomly plays one of two packaged clips. Only one clip is loaded.
+- The clip frame is 960 by 444.
 
 ## What's new in 0.5.7
 

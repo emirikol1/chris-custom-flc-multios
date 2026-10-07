@@ -4,8 +4,11 @@ const fs = require('fs');
 const path = require('path');
 
 const SCHEME = 'flc-media';
-const MEDIA_URL = 'flc-media://app/loading-dragon.mp4';
-const MEDIA_FILE = 'loading-dragon.mp4';
+const MEDIA_FILES = ['loading-dragon-1.mp4', 'loading-dragon-2.mp4'];
+const MEDIA_URLS = [
+  'flc-media://app/loading-dragon-1.mp4',
+  'flc-media://app/loading-dragon-2.mp4',
+];
 
 /**
  * Packaged builds keep the Loading banner clip outside app.asar.
@@ -59,20 +62,24 @@ function mediaDirPath() {
 }
 
 /**
- * Allow-list: only flc-media://app/loading-dragon.mp4, and only as a file
- * directly inside mediaDir. Query strings, fragments, and any other path
- * (including traversal that a URL parser would normalize away) return null.
+ * Allow-list: only the two loading-dragon clips, and only as files directly
+ * inside mediaDir. Query strings, fragments, and any other path (including
+ * traversal that a URL parser would normalize away) return null.
  * @param {unknown} urlString
  * @param {unknown} mediaDir
  * @returns {string | null}
  */
 function resolveMediaPath(urlString, mediaDir) {
-  if (urlString !== MEDIA_URL) return null;
+  if (typeof urlString !== 'string') return null;
+  const index = MEDIA_URLS.indexOf(urlString);
+  if (index < 0) return null;
   if (typeof mediaDir !== 'string' || mediaDir.length === 0) return null;
+  const fileName = MEDIA_FILES[index];
+  if (typeof fileName !== 'string' || fileName.length === 0) return null;
   const root = path.resolve(mediaDir);
-  const filePath = path.join(root, MEDIA_FILE);
+  const filePath = path.join(root, fileName);
   const relative = path.relative(root, filePath);
-  if (relative !== MEDIA_FILE) return null;
+  if (relative !== fileName) return null;
   return filePath;
 }
 
@@ -198,7 +205,7 @@ function readSlice(filePath, start, end) {
 }
 
 /**
- * protocol.handle callback. Serves only the allow-listed clip, with Range.
+ * protocol.handle callback. Serves only the two allow-listed clips, with Range.
  * Never logs the request. The clip is read with fs.createReadStream start/end
  * (a real file when the banner is unpacked from app.asar).
  * @param {string} mediaDir
@@ -283,8 +290,8 @@ function attachMediaProtocol(protocolApi, dir) {
 
 module.exports = {
   SCHEME,
-  MEDIA_URL,
-  MEDIA_FILE,
+  MEDIA_URLS,
+  MEDIA_FILES,
   rewriteAsarRoot,
   packagedMediaDir,
   mediaDirPath,
