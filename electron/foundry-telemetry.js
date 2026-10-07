@@ -126,6 +126,22 @@ const TELEMETRY_SCRIPT = `(function () {
     return nums[lo] * (1 - w) + nums[hi] * w;
   }
 
+  // Time the cache spent returning the body. Resource duration includes the
+  // wait in the browser queue, which is long when a join requests hundreds of
+  // files at once, so duration is not a disk measurement. Returns -1 when the
+  // entry does not separate that wait from the read.
+  function cacheServiceMs(rec) {
+    var start = num(rec.startTime);
+    var fetchStart = num(rec.fetchStart);
+    var reqStart = num(rec.requestStart);
+    var respStart = num(rec.responseStart);
+    var respEnd = num(rec.responseEnd);
+    if (respEnd > respStart && respStart > 0) return respEnd - respStart;
+    if (respEnd > reqStart && reqStart > 0) return respEnd - reqStart;
+    if (respEnd > fetchStart && fetchStart > start) return respEnd - fetchStart;
+    return -1;
+  }
+
   function bucket(initiatorType) {
     var t = typeof initiatorType === 'string' ? initiatorType : '';
     if (t === 'script') return 'script';
@@ -189,9 +205,12 @@ const TELEMETRY_SCRIPT = `(function () {
         b.cachedRequests += 1;
         totals.cachedRequests += 1;
         cacheReadBytes += decoded;
-        cacheReadMs += dur;
-        pushSample(cacheReadSamples, dur);
-        if (dur > 250 && decoded < 1048576) cacheReadSlow += 1;
+        var service = cacheServiceMs(rec);
+        if (service >= 0) {
+          cacheReadMs += service;
+          pushSample(cacheReadSamples, service);
+          if (service > 250 && decoded < 1048576) cacheReadSlow += 1;
+        }
       } else if (encoded > 0 && transfer > 0 && transfer < encoded) {
         b.cachedRequests += 1;
         totals.cachedRequests += 1;

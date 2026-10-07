@@ -374,6 +374,37 @@ describe('createIssueTracker', () => {
     expect(rows[5].resolvedAt).toBe(2000);
   });
 
+  it('keeps a seeded acknowledgement until the finding is seen and then gone', () => {
+    const events = [];
+    const tracker = createIssueTracker({
+      now: () => 0,
+      dismissed: ['local-disk-slow'],
+      onDismiss: (id) => events.push(['dismiss', id]),
+      onRelease: (id) => events.push(['release', id]),
+    });
+    expect(tracker.apply([], 1000)).toEqual([]);
+    expect(events).toEqual([]);
+    expect(tracker.apply([finding('local-disk-slow')], 2000)).toEqual([]);
+    expect(events).toEqual([]);
+    expect(tracker.apply([], 3000)).toEqual([]);
+    expect(events).toEqual([['release', 'local-disk-slow']]);
+    const again = tracker.apply([finding('local-disk-slow', { title: 'Back' })], 4000);
+    expect(again.map((row) => row.id)).toEqual(['local-disk-slow']);
+    expect(again[0].state).toBe('active');
+  });
+
+  it('persists a clear through the dismiss callback', () => {
+    const dismissed = [];
+    const tracker = createIssueTracker({
+      now: () => 0,
+      onDismiss: (id) => dismissed.push(id),
+    });
+    tracker.apply([finding('local-disk-slow')], 1000);
+    tracker.clear('local-disk-slow');
+    expect(dismissed).toEqual(['local-disk-slow']);
+    expect(tracker.apply([finding('local-disk-slow')], 2000)).toEqual([]);
+  });
+
   it('ignores findings without an id and uses the clock when at is omitted', () => {
     let now = 42;
     const tracker = createIssueTracker({ now: () => now });

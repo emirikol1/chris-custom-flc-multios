@@ -22,6 +22,23 @@ afterEach(() => {
 });
 
 describe('createTelemetryHub', () => {
+  it('passes a previous crash into the detector', () => {
+    let seen = null;
+    const hub = createTelemetryHub({
+      now: () => 1000,
+      log: { info() {}, debug() {}, warn() {} },
+      history: fakeHistory(),
+      previousCrash: () => ({ causes: ['uncaught-exception.TypeError'], reported: true }),
+      detector(_snap, opts) {
+        seen = opts.previousCrash;
+        return [];
+      },
+    });
+    hub.attach('w1', { serverId: 'srv-1' });
+    hub.payload('w1');
+    expect(seen).toEqual({ causes: ['uncaught-exception.TypeError'], reported: true });
+  });
+
   it('logs one join summary per ready load and records history', () => {
     const info = [];
     const debug = [];

@@ -16,6 +16,7 @@ const {
 const { readGpuPrefs } = require('./gpu-prefs');
 const { browserLikeUserAgent } = require('./user-agent');
 const { APP_VERSION } = require('./app-version');
+const { PROJECT_PAGE, launchProjectPage } = require('./project-link');
 
 const gpuPrefsPath = getGpuPrefsPath();
 const gpuPrefsAtStartup = readGpuPrefs(gpuPrefsPath);
@@ -107,6 +108,9 @@ const { registerNetTraceIpc } = require('./net-trace-ipc');
 const { createJoinHistory } = require('./join-history');
 const { initSlowCache } = require('./slow-cache-runtime');
 const { createProblemLog } = require('./problem-log');
+const { createIssueAckStore } = require('./issue-acks');
+const { createSessionGuard, attach: attachSessionGuard, note: noteSessionCause } = require('./session-guard');
+const { createCrashReport, attach: attachCrashReports, writeCrash } = require('./crash-report');
 const { createMachineBaseline } = require('./machine-baseline');
 const { createTelemetryHub } = require('./telemetry-hub');
 const { detectIssues, DEFAULT_THRESHOLDS } = require('./issue-detector');
@@ -163,12 +167,27 @@ const machineBaseline = createMachineBaseline({
   filePath: path.join(getDataDir(), 'machine-baseline.json'),
 });
 
+/** @type {{ causes: string[], client: string, reported?: boolean } | null} */
+let previousCrashInfo = null;
+/** @type {ReturnType<typeof createSessionGuard> | null} */
+let sessionGuard = null;
+
 const telemetryHub = createTelemetryHub({
   log: { info: logInfo, debug: logDebug, warn: logWarn },
   history: joinHistory,
   detector: detectIssues,
   thresholds: DEFAULT_THRESHOLDS,
   problemLog,
+  previousCrash: () => previousCrashInfo,
+});
+
+const issueAcks = createIssueAckStore({
+  filePath: path.join(getDataDir(), 'issue-acks.json'),
+});
+
+const crashReports = createCrashReport({
+  filePath: path.join(getDataDir(), 'crash-reports.jsonl'),
+  client: APP_VERSION,
 });
 
 /** @type {Promise<object | null> | null} */
@@ -220,10 +239,25 @@ const narratorService = createNarratorService({
 });
 
 process.on('uncaughtException', (err) => {
+  noteSessionCause('uncaught-exception', err && err.name);
+  writeCrash({
+    kind: 'uncaught-exception',
+    errorName: err && err.name,
+    message: err && err.message,
+    stack: err && err.stack,
+  });
   logError('uncaughtException', err);
 });
 
 process.on('unhandledRejection', (reason) => {
+  const err = reason instanceof Error ? reason : null;
+  noteSessionCause('unhandled-rejection', err && err.name);
+  writeCrash({
+    kind: 'unhandled-rejection',
+    errorName: err ? err.name : 'Error',
+    message: err ? err.message : (typeof reason === 'string' ? reason : ''),
+    stack: err ? err.stack : '',
+  });
   logError('unhandledRejection', { name: reason && reason.name ? reason.name : typeof reason });
 });
 
@@ -657,6 +691,19 @@ function createWindow() {
   }
   windowState.track(win, 'join');
   joinWindow = win;
+  const openProjectPage = () => {
+    shell.openExternal(PROJECT_PAGE).catch((err) => {
+      logWarn('[main] project page failed', { error: err && err.name ? err.name : 'Error' });
+    });
+  };
+  win.webContents.on('will-navigate', (event, target) => {
+    event.preventDefault();
+    launchProjectPage(target, openProjectPage);
+  });
+  win.webContents.setWindowOpenHandler((details) => {
+    launchProjectPage(details && details.url, openProjectPage);
+    return { action: 'deny' };
+  });
 
   logInfo('Join-list window opened');
 
@@ -745,6 +792,9 @@ ipcMain.handle('stats:set-sampling', (_event, serverId, enabled, intervalMs) => 
 ipcMain.handle('stats:copy-report', (_event, serverId, opts) => handleStatsCopyReport(serverId, opts));
 ipcMain.handle('stats:save-diagnostics', (_event, serverId) => handleStatsSaveDiagnostics(serverId));
 ipcMain.handle('stats:full-refresh', (_event, serverId) => handleStatsFullRefresh(serverId));
+ipcMain.handle('stats:list-issue-acks', (_event, serverId) => issueAcks.list(serverId));
+ipcMain.handle('stats:ack-issue', (_event, serverId, findingId) => issueAcks.ack(serverId, findingId));
+ipcMain.handle('stats:release-issue', (_event, serverId, findingId) => issueAcks.release(serverId, findingId));
 ipcMain.handle('stats:bad-urls', (_event, serverId) => handleStatsBadUrls(serverId));
 ipcMain.handle('stats:copy-bad-urls', (_event, serverId) => handleStatsCopyBadUrls(serverId));
 const { createAdminContactHandlers } = require('./admin-contact');
@@ -836,6 +886,12 @@ ipcMain.handle('servers:cache-info', async () => {
 app.on('child-process-gone', (_event, details) => {
   if (!details || details.type !== 'GPU') return;
   const reason = typeof details.reason === 'string' && details.reason ? details.reason : 'unknown';
+  noteSessionCause('gpu-process-gone', reason);
+  writeCrash({
+    kind: 'gpu-process-gone',
+    reason,
+    exitCode: details && details.exitCode,
+  });
   logWarn('[main] gpu process gone', { reason });
   noteGpuProcessGone();
 });
@@ -901,6 +957,33 @@ app.on('browser-window-focus', (_event, win) => {
 
 app.whenReady().then(() => {
   try {
+    sessionGuard = createSessionGuard({
+      filePath: path.join(getDataDir(), 'session-state.json'),
+      client: APP_VERSION,
+    });
+    attachSessionGuard(sessionGuard);
+    attachCrashReports(crashReports, () => sessionGuard.markReported());
+    if (sessionGuard.previous) {
+      const causes = sessionGuard.previous.causes.length ? sessionGuard.previous.causes : ['unclean-exit'];
+      previousCrashInfo = {
+        causes,
+        client: sessionGuard.previous.client,
+        reported: sessionGuard.previous.reported === true,
+      };
+      const evidence = causes.map((cause) => `cause=${cause}`).join(' ');
+      problemLog.recordEvent({
+        id: 'app-crashed',
+        category: 'client',
+        severity: 'error',
+        title: 'Previous session ended unexpectedly',
+        evidence,
+        serverHash: 'srv:none',
+      });
+    }
+  } catch (err) {
+    logWarn('[main] session guard failed', { error: err && err.name ? err.name : 'Error' });
+  }
+  try {
     attachMediaProtocol(protocol);
   } catch (err) {
     logWarn('[main] media protocol failed', { error: err && err.name ? err.name : 'Error' });
@@ -943,6 +1026,11 @@ app.on('before-quit', () => {
     problemLog.closeAll('quit');
   } catch (err) {
     logWarn('[problem-log] close failed', { error: err && err.name ? err.name : 'Error' });
+  }
+  try {
+    if (sessionGuard) sessionGuard.markClean();
+  } catch (err) {
+    logWarn('[main] session clean mark failed', { error: err && err.name ? err.name : 'Error' });
   }
 });
 

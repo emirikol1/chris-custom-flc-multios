@@ -507,6 +507,34 @@ describe('detectIssues', () => {
     expect(finding.evidence).not.toContain('cproctor');
   });
 
+  it('reports the previous unclean session and a saved crash report', () => {
+    const findings = detectIssues(healthy(), {
+      previousCrash: {
+        causes: ['renderer-crashed.crashed', 'https://secret.example/x'],
+        client: '0.6.0',
+        reported: true,
+      },
+    });
+    const finding = findings.find((item) => item.id === 'app-crashed');
+    expect(finding).toMatchObject({
+      category: 'client',
+      severity: 'error',
+      title: 'Previous session ended unexpectedly',
+    });
+    expect(finding.evidence).toContain('cause=renderer-crashed.crashed');
+    expect(finding.evidence).toContain('previousClient=0.6.0');
+    expect(finding.evidence).toContain('report=saved');
+    expect(finding.evidence).not.toContain('http');
+    expect(finding.suggestion).toContain('crash report');
+    expect(ids(run(healthy()))).not.toContain('app-crashed');
+    const quiet = detectIssues(healthy(), {
+      previousCrash: { causes: ['unclean-exit'], reported: false },
+    });
+    expect(quiet.find((item) => item.id === 'app-crashed').suggestion).toBe(
+      'The last session did not shut down cleanly.',
+    );
+  });
+
   it('flags an unresponsive game page', () => {
     const snapshot = healthy();
     snapshot.client.unresponsive = 1;
@@ -760,8 +788,8 @@ describe('detectIssues', () => {
     expect(finding.evidence).toContain('cacheReadSlow=20');
     expect(finding.evidence).toContain('cacheReadP95Ms=400');
     expect(finding.evidence).toContain('cacheReadBytes=1000');
-    expect(finding.suggestion).toMatch(/antivirus/);
-    expect(finding.suggestion).toMatch(/slow drive/);
+    expect(finding.suggestion).toMatch(/Antivirus/);
+    expect(finding.suggestion).not.toMatch(/slow drive/);
   });
 
   it('notes a busy system from load average per core', () => {

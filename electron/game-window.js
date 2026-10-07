@@ -16,6 +16,8 @@ const { buildLoadingVideoScript, pickLoadingClip } = require('./loading-video-sc
 const { attachMediaProtocol, MEDIA_URLS } = require('./media-protocol');
 const { expectedTotals, computeFills, monotonic, GAUGES, gaugeBinding } = require('./join-gauges');
 const { getLogsDir, getDataDir } = require('./paths');
+const { note: noteSessionCause } = require('./session-guard');
+const { writeCrash, readCrashReportText } = require('./crash-report');
 const { buildTroubleshootingReport } = require('./ts-report');
 const { forgetNetTrace, redactedNetTraceText } = require('./net-trace-ipc');
 const { summarizeAppMetrics, readMemAvailableBytes } = require('./system-info');
@@ -1736,11 +1738,25 @@ function bindSessionNet(gameSession, hubId, win) {
  * @param {import('electron').BrowserWindow} win
  * @param {string} hubId
  */
+function savedCrashReports() {
+  try {
+    return readCrashReportText(fs, path.join(getDataDir(), 'crash-reports.jsonl'), 20);
+  } catch {
+    return '';
+  }
+}
+
 function bindCrashHandlers(win, hubId) {
   win.webContents.on('render-process-gone', (_event, details) => {
     const reason = details && typeof details.reason === 'string' ? details.reason : 'unknown';
+    const exitCode = details && details.exitCode;
+    let saved = false;
+    if (reason !== 'clean-exit') {
+      noteSessionCause('renderer-crashed', reason);
+      saved = writeCrash({ kind: 'renderer-crashed', reason, exitCode });
+    }
     if (deps.hub && hubId) deps.hub.rendererGone(hubId, reason);
-    logWarn('[game-window] renderer gone', { reason, exitCode: details && details.exitCode });
+    logWarn('[game-window] renderer gone', { reason, exitCode });
     dialog.showMessageBox(win, {
       type: 'error',
       buttons: ['Reload', 'Close'],
@@ -1748,7 +1764,9 @@ function bindCrashHandlers(win, hubId) {
       cancelId: 1,
       noLink: true,
       title: 'Foundry Light Client',
-      message: 'The game page crashed.',
+      message: saved
+        ? 'The game page crashed. Details were saved for later analysis.'
+        : 'The game page crashed.',
     }).then((result) => {
       const response = result && result.response;
       if (!win || win.isDestroyed()) return;
@@ -1758,6 +1776,8 @@ function bindCrashHandlers(win, hubId) {
   });
 
   win.webContents.on('unresponsive', () => {
+    noteSessionCause('renderer-unresponsive');
+    writeCrash({ kind: 'renderer-unresponsive' });
     if (deps.hub && hubId) deps.hub.unresponsive(hubId);
     logWarn('[game-window] unresponsive');
   });
@@ -2158,7 +2178,9 @@ async function handleStatsCopyReport(serverId, opts) {
       netTrace,
       slowCache: slowCache.verdictFor(serverId),
     });
-    return copyDiagnosticsText({ clipboard }, report);
+    const crashes = savedCrashReports();
+    const text = crashes ? `${report}\n\n--- crash reports ---\n${crashes}` : report;
+    return copyDiagnosticsText({ clipboard }, text);
   } catch (err) {
     logWarn('[game-window] copy report failed', { error: err && err.name ? err.name : 'Error' });
     return { ok: false, bytes: 0 };
@@ -2181,7 +2203,11 @@ async function handleStatsSaveDiagnostics(serverId) {
       history: payload.history,
       slowCache: slowCache.verdictFor(serverId),
     });
-    const text = buildDiagnosticsText({ report, logTail: readLogTail(200) });
+    const text = buildDiagnosticsText({
+      report,
+      logTail: readLogTail(200),
+      crashReports: savedCrashReports(),
+    });
     let defaultPath = diagnosticsFileName(new Date());
     try {
       defaultPath = path.join(app.getPath('documents'), diagnosticsFileName(new Date()));

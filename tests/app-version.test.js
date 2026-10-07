@@ -16,7 +16,8 @@ describe('app version source', () => {
     expect(APP_VERSION).toBe(pkg.version);
     expect(lock.version).toBe(pkg.version);
     expect(lock.packages[''].version).toBe(pkg.version);
-    expect(read('RELEASE-NOTES.md').startsWith(`# v${pkg.version}\n`)).toBe(true);
+    const notes = read('RELEASE-NOTES.md').replace(/\r\n/g, '\n');
+    expect(notes.startsWith(`# v${pkg.version}\n`)).toBe(true);
   });
 
   it('does not copy the current version into the app or the install docs', () => {

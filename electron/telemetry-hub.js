@@ -41,6 +41,7 @@ function createTelemetryHub(opts) {
   const thresholds = options.thresholds && typeof options.thresholds === 'object' ? options.thresholds : undefined;
   const problemLog = options.problemLog && typeof options.problemLog === 'object' ? options.problemLog : null;
   const profileFor = typeof options.profileFor === 'function' ? options.profileFor : null;
+  const previousCrash = typeof options.previousCrash === 'function' ? options.previousCrash : null;
 
   /** @type {Map<string, object>} */
   const collectors = new Map();
@@ -102,6 +103,7 @@ function createTelemetryHub(opts) {
         history: list,
         baselineReady,
         speedIndex,
+        previousCrash: previousCrash ? previousCrash() : null,
       });
       if (Array.isArray(found)) findings = found;
     } catch (err) {

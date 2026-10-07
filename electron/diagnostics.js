@@ -42,7 +42,10 @@ function diagnosticsFileName(date) {
 function buildDiagnosticsText(input) {
   const report = input && typeof input.report === 'string' ? input.report : '';
   const logTail = input && typeof input.logTail === 'string' ? input.logTail : '';
-  return `${report}\n\n--- main.log (last 200 lines) ---\n${logTail}`;
+  const crashes = input && typeof input.crashReports === 'string' ? input.crashReports : '';
+  let text = `${report}\n\n--- main.log (last 200 lines) ---\n${logTail}`;
+  if (crashes) text += `\n\n--- crash reports ---\n${crashes}`;
+  return text;
 }
 
 /**

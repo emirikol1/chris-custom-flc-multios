@@ -778,16 +778,18 @@ describe('buildTelemetryScript', () => {
   it('counts cache reads separately from revalidations', () => {
     const ctx = runTelemetry((sandbox) => {
       sandbox._resources = [
-        { initiatorType: 'script', deliveryType: 'cache', transferSize: 0, decodedBodySize: 1000, duration: 300, startTime: 0, responseEnd: 300 },
-        { initiatorType: 'script', deliveryType: 'cache', transferSize: 0, decodedBodySize: 2 * 1024 * 1024, duration: 400, startTime: 0, responseEnd: 400 },
+        { initiatorType: 'script', deliveryType: 'cache', transferSize: 0, decodedBodySize: 1000, duration: 2500, startTime: 0, fetchStart: 0, responseStart: 100, responseEnd: 450 },
+        { initiatorType: 'script', deliveryType: 'cache', transferSize: 0, decodedBodySize: 2 * 1024 * 1024, duration: 400, startTime: 0, responseStart: 0, responseEnd: 400 },
+        { initiatorType: 'script', deliveryType: 'cache', transferSize: 0, decodedBodySize: 800, duration: 2539, startTime: 10, fetchStart: 10, requestStart: 0, responseStart: 0, responseEnd: 2549 },
+        { initiatorType: 'script', deliveryType: 'cache', transferSize: 0, decodedBodySize: 900, duration: 2600, startTime: 0, fetchStart: 2500, responseStart: 2520, responseEnd: 2540 },
         { initiatorType: 'script', transferSize: 100, encodedBodySize: 5000, decodedBodySize: 5000, duration: 800, startTime: 0, responseEnd: 800 },
       ];
     });
     const xfer = ctx.payloads.find((payload) => payload.type === 'transfers');
-    expect(xfer.cacheReadBytes).toBe(1000 + 2 * 1024 * 1024);
-    expect(xfer.cacheReadMs).toBe(700);
+    expect(xfer.cacheReadBytes).toBe(1000 + 2 * 1024 * 1024 + 800 + 900);
+    expect(xfer.cacheReadMs).toBe(370);
     expect(xfer.cacheReadSlow).toBe(1);
-    expect(xfer.cacheReadP95Ms).toBe(395);
+    expect(xfer.cacheReadP95Ms).toBe(333.5);
     expect(xfer.revalidatedRequests).toBe(1);
   });
 

@@ -63,7 +63,7 @@ const DEFAULT_THRESHOLDS = {
   cacheFullRatio: 0.9,
   /** Cache hit ratio below this counts as missing the cache. */
   cacheHitRatioLow: 0.5,
-  /** Slow small cache reads at or above this mean the local disk is lagging. */
+  /** Slow small cache-service times at or above this mean the cache read itself was slow. */
   cacheReadSlowCount: 20,
 };
 
@@ -598,6 +598,39 @@ function tlsFinding(snap, thresholds) {
 /**
  * @param {object} snap
  */
+/**
+ * The previous process did not shut down cleanly. Causes are safe tokens
+ * noted before it died (renderer, GPU, or an exception name).
+ * @param {unknown} info
+ */
+function previousSessionFinding(info) {
+  if (!isPlain(info) || !Array.isArray(info.causes) || !info.causes.length) return null;
+  /** @type {Array<[string, string]>} */
+  const entries = [];
+  const labels = ['cause', 'cause2', 'cause3', 'cause4'];
+  for (let i = 0; i < info.causes.length && entries.length < labels.length; i += 1) {
+    const cause = info.causes[i];
+    if (typeof cause === 'string' && SAFE_ENUM.test(cause)) entries.push([labels[entries.length], cause]);
+  }
+  if (typeof info.client === 'string' && SAFE_ENUM.test(info.client)) entries.push(['previousClient', info.client]);
+  if (info.reported === true) entries.push(['report', 'saved']);
+  if (!entries.length) return null;
+  const suggestion = info.reported === true
+    ? 'The last session did not shut down cleanly. A crash report was saved for later analysis.'
+    : 'The last session did not shut down cleanly.';
+  return make(
+    'app-crashed',
+    'client',
+    'error',
+    'Previous session ended unexpectedly',
+    pairs(entries),
+    suggestion,
+  );
+}
+
+/**
+ * @param {object} snap
+ */
 function crashFinding(snap) {
   const gone = section(section(snap, 'client'), 'rendererGone');
   const count = num(gone.count);
@@ -930,8 +963,9 @@ function cacheFinding(snap, thresholds) {
 }
 
 /**
- * Small cached files that take a long time, while the network TTFB is fine,
- * point at local disk or antivirus rather than the server.
+ * Small cached files whose cache service time is long, while the network TTFB
+ * is fine. Service time is the cache read, not the browser queue, so a busy
+ * join on a fast disk does not qualify.
  *
  * @param {object} snap
  * @param {object} thresholds
@@ -957,7 +991,7 @@ function localDiskFinding(snap, thresholds) {
       ['cacheReadP95Ms', p95],
       ['cacheReadBytes', bytes],
     ]),
-    'Local disk or antivirus scanning is slowing cached files; consider moving the app\'s cache off a slow drive.',
+    'The local cache was slow to return these files. That time is the cache read itself, not time spent waiting behind other files. Antivirus scanning can cause it.',
   );
 }
 
@@ -1069,6 +1103,7 @@ function detectIssues(snapshot, options) {
     flags.suppressSoft ? null : worldSlowFinding(snap, thresholds, rel),
     tlsFinding(snap, thresholds),
     crashFinding(snap),
+    previousSessionFinding(opts.previousCrash),
     unresponsiveFinding(snap),
     pageErrorFinding(snap, thresholds),
     softwareWebglFinding(snap),

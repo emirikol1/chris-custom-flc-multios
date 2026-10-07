@@ -17,6 +17,9 @@ contextBridge.exposeInMainWorld('flcStats', {
   emailAdmin: (serverId) => ipcRenderer.invoke('stats:email-admin', serverId),
   clearCache: (serverId) => ipcRenderer.invoke('game:clear-cache', serverId),
   fullRefresh: (serverId) => ipcRenderer.invoke('stats:full-refresh', serverId),
+  listIssueAcks: (serverId) => ipcRenderer.invoke('stats:list-issue-acks', serverId),
+  ackIssue: (serverId, findingId) => ipcRenderer.invoke('stats:ack-issue', serverId, findingId),
+  releaseIssue: (serverId, findingId) => ipcRenderer.invoke('stats:release-issue', serverId, findingId),
   onUpdate: (callback) => {
     const wrapped = (_event, payload) => callback(payload);
     ipcRenderer.on('stats:update', wrapped);

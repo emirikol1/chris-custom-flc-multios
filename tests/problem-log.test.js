@@ -182,6 +182,28 @@ describe('createProblemLog', () => {
     expect(JSON.parse(lines[3]).endedBy).toBe('event');
   });
 
+  it('records a previous-session crash without a server', () => {
+    const filePath = tempFile();
+    const log = createProblemLog({ filePath, now: () => 5000, clientVersion: '0.6.0' });
+    expect(log.recordEvent({
+      id: 'app-crashed',
+      category: 'client',
+      severity: 'error',
+      title: 'Previous session ended unexpectedly',
+      evidence: 'cause=uncaught-exception.TypeError',
+      serverHash: 'srv:none',
+    })).toBe(true);
+    expect(log.recordEvent({ id: 'nope', severity: 'info' })).toBe(false);
+    const rec = JSON.parse(readLines(filePath)[0]);
+    expect(rec).toMatchObject({
+      endedBy: 'event',
+      id: 'app-crashed',
+      server: 'srv:none',
+      evidence: 'cause=uncaught-exception.TypeError',
+      durationMs: 0,
+    });
+  });
+
   it('rotates the file once it exceeds maxBytes and overwrites the previous rotation', () => {
     const dir = tempDir();
     const filePath = path.join(dir, 'problem-log.jsonl');

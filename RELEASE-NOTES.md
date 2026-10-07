@@ -1,6 +1,13 @@
-# v0.6.0
+# v0.6.1
 
 Chris's Custom FLC MultiOS — Foundry VTT join client for Windows, macOS, and Linux.
+
+## What's new in 0.6.1
+
+- The title on the Join window opens this project's GitHub page in the system browser. The join window stays put.
+- A cached-file warning times the cache read itself. A busy join queue on a fast disk stays quiet. Antivirus scanning can still cause a real slow read.
+- Clearing a performance warning keeps it cleared across restarts until that warning comes back and then goes away.
+- If the app does not shut down cleanly, the next launch records that crash, including a renderer, GPU, or exception cause when one was known. A crash report with the error name, file and line, and memory is saved for later analysis and included in diagnostics.
 
 ## What's new in 0.6.0
 

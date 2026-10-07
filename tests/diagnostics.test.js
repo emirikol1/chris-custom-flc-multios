@@ -30,6 +30,9 @@ describe('diagnostics helpers', () => {
     expect(buildDiagnosticsText({ report: 'report', logTail: 'line' })).toBe(
       'report\n\n--- main.log (last 200 lines) ---\nline',
     );
+    expect(buildDiagnosticsText({ report: 'report', logTail: 'line', crashReports: '{"v":1}' })).toBe(
+      'report\n\n--- main.log (last 200 lines) ---\nline\n\n--- crash reports ---\n{"v":1}',
+    );
   });
 
   it('copies text and saves without returning a path', async () => {

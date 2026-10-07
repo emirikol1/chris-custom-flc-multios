@@ -33,6 +33,7 @@
   let prevSample = null;
   let sawLive = false;
   let issueTracker = null;
+  let ackedIds = [];
   let resolvedTimer = null;
   const issueCopyTimers = new WeakMap();
   let badUrlCount = null;
@@ -162,9 +163,22 @@
     setText("sync-last-message", fmt.formatTraffic(sync));
   }
 
+  function persistAck(id, acknowledged) {
+    const api = window.flcStats;
+    if (!serverId || !api) return;
+    const fn = acknowledged ? api.ackIssue : api.releaseIssue;
+    if (typeof fn !== "function") return;
+    fn(serverId, id).catch(() => {});
+  }
+
   function issues() {
     if (!issueTracker && fmt && typeof fmt.createIssueTracker === "function") {
-      issueTracker = fmt.createIssueTracker({ now: () => Date.now() });
+      issueTracker = fmt.createIssueTracker({
+        now: () => Date.now(),
+        dismissed: ackedIds,
+        onDismiss: (id) => persistAck(id, true),
+        onRelease: (id) => persistAck(id, false),
+      });
     }
     return issueTracker;
   }
@@ -1273,6 +1287,14 @@
     if (!serverId) {
       showToast("Statistics are unavailable", "error");
       return;
+    }
+    if (typeof window.flcStats.listIssueAcks === "function") {
+      try {
+        const listed = await window.flcStats.listIssueAcks(serverId);
+        if (Array.isArray(listed)) ackedIds = listed.filter((id) => typeof id === "string" && id);
+      } catch {
+        ackedIds = [];
+      }
     }
     let samplingOn = false;
     try {

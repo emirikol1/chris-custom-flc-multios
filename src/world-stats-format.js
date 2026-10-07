@@ -367,8 +367,14 @@ function compareIssueRows(a, b) {
 
 /**
  * Remembers active and resolved findings across payloads.
- * Clearing an active id hides it until that id is absent and then detected again.
- * @param {{ now?: () => number }} [options]
+ * Clearing an active id hides it until that id has been seen again and then
+ * goes away. Seeded ids stay hidden across a restart until that happens.
+ * @param {{
+ *   now?: () => number,
+ *   dismissed?: string[],
+ *   onDismiss?: (id: string) => void,
+ *   onRelease?: (id: string) => void,
+ * }} [options]
  * @returns {{
  *   apply: (findings: object[] | null | undefined, at?: number) => object[],
  *   clear: (id: string) => void,
@@ -378,8 +384,16 @@ function compareIssueRows(a, b) {
  */
 function createIssueTracker(options) {
   const clock = options && typeof options.now === "function" ? options.now : () => Date.now();
+  const onDismiss = options && typeof options.onDismiss === "function" ? options.onDismiss : null;
+  const onRelease = options && typeof options.onRelease === "function" ? options.onRelease : null;
   const byId = new Map();
   const dismissed = new Set();
+  const seen = new Set();
+  const seeded = options && Array.isArray(options.dismissed) ? options.dismissed : [];
+  for (let i = 0; i < seeded.length; i += 1) {
+    const id = seeded[i];
+    if (typeof id === "string" && id) dismissed.add(id);
+  }
 
   function stamp(at) {
     if (typeof at === "number" && Number.isFinite(at)) return at;
@@ -418,14 +432,13 @@ function createIssueTracker(options) {
   function apply(findings, at) {
     const when = stamp(at);
     const present = indexFindings(findings);
-    const dismissedIds = Array.from(dismissed);
-    for (let i = 0; i < dismissedIds.length; i += 1) {
-      if (!present.has(dismissedIds[i])) dismissed.delete(dismissedIds[i]);
-    }
     const presentIds = Array.from(present.keys());
     for (let i = 0; i < presentIds.length; i += 1) {
       const id = presentIds[i];
-      if (dismissed.has(id)) continue;
+      if (dismissed.has(id)) {
+        seen.add(id);
+        continue;
+      }
       const finding = present.get(id);
       const existing = byId.get(id);
       if (!existing) {
@@ -452,6 +465,14 @@ function createIssueTracker(options) {
       existing.lastSeenAt = when;
       existing.resolvedAt = null;
     }
+    const dismissedIds = Array.from(dismissed);
+    for (let i = 0; i < dismissedIds.length; i += 1) {
+      const id = dismissedIds[i];
+      if (present.has(id) || !seen.has(id)) continue;
+      dismissed.delete(id);
+      seen.delete(id);
+      if (onRelease) onRelease(id);
+    }
     const known = Array.from(byId.keys());
     for (let i = 0; i < known.length; i += 1) {
       const id = known[i];
@@ -470,7 +491,11 @@ function createIssueTracker(options) {
     const row = byId.get(id);
     if (!row) return;
     byId.delete(id);
-    if (row.state === "active") dismissed.add(id);
+    if (row.state === "active") {
+      dismissed.add(id);
+      seen.add(id);
+      if (onDismiss) onDismiss(id);
+    }
   }
 
   function clearResolved() {

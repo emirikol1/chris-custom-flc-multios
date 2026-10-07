@@ -380,6 +380,34 @@ function createProblemLog(opts) {
     for (let i = 0; i < keys.length; i += 1) closeServer(keys[i], endedBy);
   }
 
+  /**
+   * One crash or similar point event, including a previous process that never
+   * reached a clean quit. `serverHash` may be srv:none.
+   * @param {object} raw
+   * @returns {boolean}
+   */
+  function recordEvent(raw) {
+    const source = raw && typeof raw === 'object' ? raw : null;
+    const item = source ? normalizeFinding(source) : null;
+    if (!item) return false;
+    const issue = {
+      startedAt: currentNow(),
+      id: item.id,
+      category: item.category,
+      severity: item.severity,
+      title: item.title,
+      evidence: item.evidence,
+    };
+    applyCtx(issue, source);
+    try {
+      appendRecord(issue, 'event', issue.startedAt);
+      return true;
+    } catch (err) {
+      reportWrite(err);
+      return false;
+    }
+  }
+
   function flush() {}
 
   /**
@@ -415,6 +443,7 @@ function createProblemLog(opts) {
 
   return {
     observe,
+    recordEvent,
     closeServer,
     closeAll,
     flush,
