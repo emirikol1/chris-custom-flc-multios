@@ -1,6 +1,11 @@
-# v0.5.8
+# v0.5.9
 
 Chris's Custom FLC MultiOS — Foundry VTT join client for Windows, macOS, and Linux.
+
+## What's new in 0.5.9
+
+- The two loading clips are the cleaned frames. Stray grey, the cyan patch under the greyscale scroll, the grey blocks under the outer ribbon arcs, and the grey bar under the blue emblem are gone. The fly stays.
+- The clip stays visible and paused on the loading card, then starts when about one clip length remains so it finishes as the game appears.
 
 ## What's new in 0.5.8
 

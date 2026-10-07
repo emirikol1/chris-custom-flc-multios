@@ -46,7 +46,10 @@ describe('buildLoadingVideoScript source', () => {
     expect(src).not.toContain('loading-dragon.mp4');
     expect(src.match(/flc-media:\/\//g)).toEqual(['flc-media://']);
     expect(src).toContain(String(CLIP_MS));
-    expect(src).toContain('1.6');
+    expect(src).toContain('START_LEAD_MS = 1000');
+    expect(src).not.toContain('1.6');
+    expect(src).toContain('drawing scene');
+    expect(src).toContain('setting up world');
     expect(src).toContain('split(/\\s+/)');
     expect(src).toContain('aspect-ratio:960 / 444');
     expect(src).not.toContain('960 / 424');
@@ -437,9 +440,12 @@ function createHost(options) {
       matches: reduceMotion && String(query).indexOf('prefers-reduced-motion') >= 0,
     };
   };
+  const stepNames = ['', 'connecting', 'loading page', 'receiving world data', 'initializing', 'loading languages', 'setting up world', 'drawing scene', 'ready'];
   sandbox.__flcTelemetry = {
     step() {
-      return { index: phase, total: 8, name: 'setup' };
+      const index = phase;
+      const name = index >= 0 && index < stepNames.length ? stepNames[index] : '';
+      return { index, total: 8, name };
     },
   };
 
@@ -568,17 +574,27 @@ describe('loading clip on the join card', () => {
     expect(host.countBoxes()).toBe(0);
   });
 
-  it('waits for the ETA window, then sets the shared playback rate', () => {
+  it('stays paused while the estimate is well above the clip, then starts about one clip from ready', () => {
     const host = createHost();
     host.flushIdle();
+    const video = host.video();
+    const budget = video.duration * 1000;
     host.api.setJoin(0, 60000);
-    expect(host.video().playCalls).toBe(0);
+    expect(video.playCalls).toBe(0);
+    expect(video.paused).toBe(true);
 
     host.api.setJoin(5000, 20000);
-    const video = host.video();
+    expect(video.playCalls).toBe(0);
+    expect(host.api.paused).toBe(true);
+
+    host.api.setJoin(0, budget + 1500);
+    expect(video.playCalls).toBe(0);
+    expect(video.paused).toBe(true);
+
+    host.api.setJoin(0, budget);
     expect(video.playCalls).toBe(1);
     expect(video.paused).toBe(false);
-    expect(video.playbackRate).toBeCloseTo(rateFor((video.duration - video.currentTime) * 1000, 15000), 8);
+    expect(video.playbackRate).toBeCloseTo(rateFor((video.duration - video.currentTime) * 1000, budget), 8);
     expect(host.document.getElementById('flc-loading-video').getAttribute('class')).toBe('flc-lv-on');
     expect(host.api.audio).toBe('on');
     expect(host.api.paused).toBe(false);
@@ -588,15 +604,20 @@ describe('loading clip on the join card', () => {
     expect(video.playbackRate).toBe(1);
   });
 
-  it('starts at setup when this server has no typical join time', () => {
-    const host = createHost({ phase: 5 });
+  it('stays paused on setting up world when this server has no typical join time', () => {
+    const host = createHost({ phase: 2 });
     host.flushIdle();
     host.api.setJoin(0, 0);
     expect(host.video().playCalls).toBe(0);
     host.setPhase(6);
     host.api.setJoin(0, 0);
+    expect(host.video().playCalls).toBe(0);
+    expect(host.video().paused).toBe(true);
+    host.setPhase(7);
+    host.api.setJoin(0, 0);
     expect(host.video().playCalls).toBe(1);
     expect(host.video().playbackRate).toBe(1);
+    expect(host.api.audio).toBe('on');
   });
 
   it('ignores non-finite join numbers', () => {
@@ -610,7 +631,7 @@ describe('loading clip on the join card', () => {
   it('pauses and removes itself on destroy, and when the overlay finishes', () => {
     const host = createHost();
     host.flushIdle();
-    host.api.setJoin(5000, 20000);
+    host.api.setJoin(0, CLIP_MS);
     const video = host.video();
     expect(video.paused).toBe(false);
     host.api.destroy();
@@ -650,7 +671,7 @@ describe('loading clip on the join card', () => {
     expect(box.getAttribute('class')).not.toBe('flc-lv-off');
     expect(String(host.root.getAttribute('class') || '')).toContain('flc-lb-on');
     host.flushIdle();
-    host.api.setJoin(5000, 20000);
+    host.api.setJoin(0, CLIP_MS);
     const video = host.video();
     expect(video.playCalls).toBe(1);
 
@@ -705,7 +726,7 @@ describe('loading clip on the join card', () => {
   });
 
   it('retries once without sound when playback with audio is rejected', () => {
-    const host = createHost({ rejectPlay: true, phase: 6 });
+    const host = createHost({ rejectPlay: true, phase: 7 });
     const video = host.video();
     expect(video.playCalls).toBe(2);
     expect(video.muted).toBe(true);

@@ -84,6 +84,7 @@ function buildLoadingVideoScript(mediaUrl) {
     if (window.__flcLoadingVideo) return;
     __RATE_FOR__
     var CLIP_MS = 10433;
+    var START_LEAD_MS = 1000;
     var MEDIA = '${clip}';
     var anchor = 0;
     var haveAnchor = false;
@@ -152,16 +153,32 @@ function buildLoadingVideoScript(mediaUrl) {
       return t;
     }
 
-    function phaseIndex() {
+    function clipMs(video) {
+      var dur = 0;
+      if (video) dur = video.duration;
+      if (typeof dur !== 'number' || isFinite(dur) === false || dur <= 0) return CLIP_MS;
+      return dur * 1000;
+    }
+
+    function canvasStep() {
       var step = null;
+      var name = '';
       var index = 0;
+      var total = 0;
       try {
         if (window.__flcTelemetry && typeof window.__flcTelemetry.step === 'function') step = window.__flcTelemetry.step();
       } catch (e) { step = null; }
-      if (!step || typeof step.index !== 'number' || isFinite(step.index) === false) return 0;
+      if (!step) return false;
+      if (typeof step.name === 'string') name = step.name;
+      if (name === 'setting up world') return false;
+      if (name === 'drawing scene') return true;
+      if (name === 'ready') return false;
+      if (typeof step.index !== 'number' || isFinite(step.index) === false) return false;
+      total = 8;
+      if (typeof step.total === 'number' && isFinite(step.total) && step.total >= 2) total = step.total;
       index = step.index;
-      if (index < 0) return 0;
-      return index;
+      if (index < 1) return false;
+      return index === total - 1;
     }
 
     function remainMs() {
@@ -495,16 +512,19 @@ function buildLoadingVideoScript(mediaUrl) {
       try { video.playbackRate = rate; } catch (e) {}
     }
 
-    function wantsStart(remain, phase) {
-      if (!(typicalMs > 0)) return phase >= 6;
-      return remain <= CLIP_MS * 1.6;
+    function wantsStart(remain, video) {
+      var budget = 0;
+      if (typicalMs > 0) {
+        budget = clipMs(video);
+        return remain <= budget + START_LEAD_MS;
+      }
+      return canvasStep();
     }
 
     function sync() {
       var box = null;
       var video = null;
       var remain = 0;
-      var phase = 0;
       if (destroyed) return;
       if (placedRoot && overlayFinished(placedRoot)) {
         destroy();
@@ -515,8 +535,7 @@ function buildLoadingVideoScript(mediaUrl) {
       try { video = box.querySelector('video'); } catch (e2) { video = null; }
       if (!video || !bannerShown) return;
       remain = remainMs();
-      phase = phaseIndex();
-      if (started !== true && wantsStart(remain, phase) !== true) return;
+      if (started !== true && wantsStart(remain, video) !== true) return;
       started = true;
       try {
         if (video.ended) {
