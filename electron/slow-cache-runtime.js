@@ -82,6 +82,21 @@ function originOf(win) {
 }
 
 /**
+ * Hostname for the advice check. Not retained or logged.
+ * @param {object} win
+ * @returns {string}
+ */
+function hostnameOf(win) {
+  const origin = originOf(win);
+  if (!origin) return '';
+  try {
+    return new URL(origin).hostname;
+  } catch {
+    return '';
+  }
+}
+
+/**
  * @param {string} serverId
  * @param {{ slow: boolean, proxy: string, total: number, noCache: number }} summary
  */
@@ -105,15 +120,16 @@ function commit(win, summary) {
   if (!store || !summary || summary.total < detect.DECIDE_AT) return;
   const id = serverIdOf(win);
   if (!validId(id)) return;
+  const show = detect.adviceApplies(summary, hostnameOf(win));
   store.saveVerdict(id, {
-    slow: summary.slow === true,
+    slow: show,
     proxy: summary.proxy === 'nginx' ? 'nginx' : 'other',
     total: summary.total,
     noCache: summary.noCache,
     at: Date.now(),
   });
   const state = uiState(win);
-  if (summary.slow === true && !state.logged) {
+  if (show && !state.logged) {
     state.logged = true;
     logSlow(id, summary);
   }
@@ -128,7 +144,10 @@ function maybeOpen(win) {
   const state = uiState(win);
   if (state.phase !== 'game') return;
   const row = store.get(serverIdOf(win));
-  if (!row || row.slow !== true || row.dismissed === true) return;
+  if (!row || row.dismissed === true) return;
+  const host = hostnameOf(win);
+  if (!host) return;
+  if (!detect.adviceApplies({ slow: row.slow === true, proxy: row.proxy }, host)) return;
   try { openLoadNotice(win); } catch { /* notice window failed */ }
 }
 
@@ -327,7 +346,10 @@ function onDomReady(win) {
     if (summary.total >= detect.DECIDE_AT) commit(win, summary);
     if (!gameDoc || !store) return;
     const row = store.get(serverIdOf(win));
-    if (row && row.slow === true && row.dismissed !== true) inject(win, row.proxy);
+    const host = hostnameOf(win);
+    if (row && detect.adviceApplies({ slow: row.slow === true, proxy: row.proxy }, host) && row.dismissed !== true) {
+      inject(win, row.proxy);
+    }
   } catch {
     /* dom-ready hook failed */
   }

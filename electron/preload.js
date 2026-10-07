@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('flc', {
     check: () => ipcRenderer.invoke('app:check-update'),
     download: () => ipcRenderer.invoke('app:download-update'),
   },
+  version: () => ipcRenderer.invoke('app:get-version'),
   copyText: (text) => ipcRenderer.invoke('app:copy-text', text),
   slowCache: {
     list: () => ipcRenderer.invoke(IPC.list),

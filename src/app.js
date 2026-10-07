@@ -1086,8 +1086,19 @@
     }
   }
 
+  function showAppVersion() {
+    const badge = document.getElementById("app-version");
+    if (!badge || typeof window.flc?.version !== "function") return;
+    window.flc.version().then((version) => {
+      if (typeof version !== "string" || !/^\d+\.\d+\.\d+/.test(version)) return;
+      badge.textContent = `v${version}`;
+      badge.hidden = false;
+    }).catch(() => {});
+  }
+
   function init() {
     bindUi();
+    showAppVersion();
     subscribeWebglFallback();
     refreshWebglStatusFromBackend();
     loadServers();

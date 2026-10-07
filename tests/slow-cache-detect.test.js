@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   DECIDE_AT,
   countsFor,
+  adviceApplies,
+  isForgeVttHost,
   isNoCacheControl,
   isNginxServer,
   noteCompleted,
@@ -60,6 +62,25 @@ describe('summarize', () => {
     });
     expect(summarize({ total: 40, noCache: 40, nginx: 0 }).proxy).toBe('other');
     expect(summarize({ total: DECIDE_AT, noCache: DECIDE_AT, nginx: 0 }).slow).toBe(true);
+  });
+});
+
+describe('adviceApplies', () => {
+  const slowNginx = { slow: true, proxy: 'nginx' };
+
+  it('keeps the note for an nginx server the player can configure', () => {
+    expect(adviceApplies(slowNginx, 'play.example')).toBe(true);
+    expect(adviceApplies(slowNginx, '')).toBe(true);
+    expect(isForgeVttHost('notforge-vtt.com')).toBe(false);
+    expect(isForgeVttHost('forge-vtt.com.example')).toBe(false);
+  });
+
+  it('hides the note for forge-vtt.com and for anything that is not nginx', () => {
+    expect(adviceApplies(slowNginx, 'forge-vtt.com')).toBe(false);
+    expect(adviceApplies(slowNginx, 'World.Forge-VTT.com.')).toBe(false);
+    expect(adviceApplies(slowNginx, 'my-world.forge-vtt.com:443')).toBe(false);
+    expect(adviceApplies({ slow: true, proxy: 'other' }, 'play.example')).toBe(false);
+    expect(adviceApplies({ slow: false, proxy: 'nginx' }, 'play.example')).toBe(false);
   });
 });
 

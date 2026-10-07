@@ -83,10 +83,9 @@ Some Foundry servers sit behind a reverse proxy that marks package files — scr
 
 This client cannot change that safely. When it sees the pattern (dozens of those files, almost all marked no-cache), it remembers a yes/no flag for that saved server. The flag is the server's short id, a couple of counts, and whether you dismissed the note. No address is stored.
 
-The note shows in three places, and the same text is copied from each:
+The note is shown only when the responses are nginx and the no-cache pattern matches the fix in the message. Worlds on forge-vtt.com are skipped, because that host is not a server the player can reconfigure.
 
 - During the black screen, a card explains the wait and lets you copy a message for the server admin
-- On the loading card, a short line with the same copy button, plus Details for the full text
 - On that server's card in the Join window, an amber **Server config could be optimized — Copy message for admin** button
 
 The message tells an nginx admin how to turn on HTTP/2 and let browsers reuse those files while still picking up updates in the background. **Don't show again for this server** hides the note for that server only.
@@ -95,12 +94,14 @@ The message tells an nginx admin how to turn on HTTP/2 and let browsers reuse th
 
 You do **not** need Git or Node.js to run the app. Download the installer for your operating system from **[GitHub Releases](https://github.com/emirikol1/chris-custom-flc-multios/releases/latest)**.
 
-| OS | Download (v0.5.5) | Install |
-|----|-------------------|---------|
-| **Windows** | [ChrisCustomFLC-MultiOS-0.5.5-windows-setup.exe](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.5/ChrisCustomFLC-MultiOS-0.5.5-windows-setup.exe) | Double-click the installer, follow the prompts |
-| **macOS** | [ChrisCustomFLC-MultiOS-0.5.5-mac.dmg](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.5/ChrisCustomFLC-MultiOS-0.5.5-mac.dmg) | Open the DMG, drag the app to **Applications** |
-| **Linux (Mint / Ubuntu / Debian)** | [ChrisCustomFLC-MultiOS-0.5.5-linux.deb](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.5/ChrisCustomFLC-MultiOS-0.5.5-linux.deb) | Double-click the `.deb`, or `sudo apt install ./ChrisCustomFLC-MultiOS-0.5.5-linux.deb` |
-| **Linux (other)** | [ChrisCustomFLC-MultiOS-0.5.5-linux.AppImage](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.5/ChrisCustomFLC-MultiOS-0.5.5-linux.AppImage) | Right-click → **Properties** → allow executing, then double-click |
+Each installer name includes the app version. Pick the file for your system.
+
+| OS | File on the latest release | Install |
+|----|----------------------------|---------|
+| **Windows** | the `.exe` setup | Double-click the installer, follow the prompts |
+| **macOS** | the `.dmg` | Open the DMG, drag the app to **Applications** |
+| **Linux (Mint / Ubuntu / Debian)** | the `.deb` | Double-click the `.deb`, or run `sudo apt install` on the downloaded file |
+| **Linux (other)** | the `.AppImage` | Right-click → **Properties** → allow executing, then double-click |
 
 Windows and Mac stop this app the first time you open it. The installers are not signed with an Apple or Microsoft developer certificate, so the computer treats the publisher as unknown and asks you to approve the app once. That approval is required before the app will open. Leave Windows Security and Mac security turned on. You are allowing this one app.
 

@@ -1,6 +1,12 @@
-# v0.5.9
+# v0.6.0
 
 Chris's Custom FLC MultiOS — Foundry VTT join client for Windows, macOS, and Linux.
+
+## What's new in 0.6.0
+
+- The server-config note appears only when the join shows the nginx no-cache pattern the copied message can fix. Worlds on forge-vtt.com are skipped.
+- Import and Export sit on their own line under the connection options. Check for updates is on the next line, in gold, and turns green when a download is ready.
+- The version on the Join window is the installer version. It is read from `package.json`, so the badge stays on the release you are running.
 
 ## What's new in 0.5.9
 

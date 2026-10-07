@@ -48,10 +48,9 @@ body {
 /* Header */
 .app-header {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.55rem;
   padding: 0.75rem 1.25rem;
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--border);
@@ -60,11 +59,11 @@ body {
   z-index: 20;
 }
 
-.header-brand {
+.header-identity {
   display: flex;
   align-items: baseline;
+  justify-content: flex-start;
   gap: 0.65rem;
-  flex-wrap: wrap;
 }
 
 .app-title {
@@ -75,12 +74,15 @@ body {
 }
 
 .version-badge {
-  font-size: 0.75rem;
+  flex: 0 0 auto;
+  font-size: 0.85rem;
+  font-weight: 700;
   font-family: ui-monospace, monospace;
-  color: var(--text-muted);
-  padding: 0.15rem 0.45rem;
+  color: var(--text);
+  padding: 0.2rem 0.5rem;
   border: 1px solid var(--border);
   border-radius: 4px;
+  background: var(--bg-card);
 }
 
 .header-toolbar {
@@ -123,6 +125,13 @@ body {
 .webgl-badge.mode-software {
   color: var(--warn);
   border-color: rgba(230, 184, 77, 0.4);
+}
+
+.toolbar-webgl {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
 }
 
 .webgl-override select {
@@ -172,7 +181,15 @@ body {
   margin-bottom: 0;
 }
 
-.settings-io {
+.header-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+}
+
+.settings-io,
+.settings-updates {
   display: inline-flex;
   gap: 0.25rem;
 }
@@ -550,6 +567,34 @@ body {
 .btn-ghost:hover:not(:disabled) {
   color: var(--text);
   background: rgba(255, 255, 255, 0.05);
+}
+
+.btn.btn-check-update {
+  color: #1a1408;
+  background: #e6b84d;
+  border-color: #f3d78a;
+  font-weight: 700;
+}
+
+.btn.btn-check-update:hover:not(:disabled) {
+  color: #1a1408;
+  background: #f0cc6a;
+  border-color: #ffe3a3;
+}
+
+.btn.btn-check-update[data-mode="download"] {
+  color: #04140c;
+  background: #3ddc84;
+  border-color: #c8ffdf;
+  font-weight: 800;
+  font-size: 0.95rem;
+  padding: 0.42rem 0.85rem;
+}
+
+.btn.btn-check-update[data-mode="download"]:hover:not(:disabled) {
+  color: #04140c;
+  background: #67eea4;
+  border-color: #e7fff1;
 }
 
 .btn-sm {

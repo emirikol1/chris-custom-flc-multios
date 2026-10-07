@@ -15,6 +15,7 @@ const {
 } = require('./paths');
 const { readGpuPrefs } = require('./gpu-prefs');
 const { browserLikeUserAgent } = require('./user-agent');
+const { APP_VERSION } = require('./app-version');
 
 const gpuPrefsPath = getGpuPrefsPath();
 const gpuPrefsAtStartup = readGpuPrefs(gpuPrefsPath);
@@ -152,7 +153,7 @@ try {
 
 const problemLog = createProblemLog({
   filePath: path.join(getDataDir(), 'problem-log.jsonl'),
-  clientVersion: app.getVersion(),
+  clientVersion: APP_VERSION,
   log: {
     warn: (msg, extra) => logWarn(msg, extra),
   },
@@ -179,7 +180,7 @@ function getSystemInfo() {
       app,
       screen,
       gpuPrefs: readGpuPrefs(gpuPrefsPath),
-      clientVersion: pkg.version,
+      clientVersion: APP_VERSION,
     }).catch((err) => {
       systemInfoPromise = null;
       logWarn('[main] system info failed', { error: err && err.name ? err.name : 'Error' });
@@ -408,7 +409,7 @@ function registerSettingsTransferIpc() {
         appPrefs: readAppPrefs(appPrefsPath),
         narratorSettings: loadNarratorSettings(narratorRoot),
         windowState: readWindowStates(getWindowStatePath()),
-        appVersion: pkg.version,
+        appVersion: APP_VERSION,
       });
       // Contains credentials (server passwords, API key): owner-only file.
       fs.writeFileSync(pick.filePath, JSON.stringify(bundle, null, 2), { mode: 0o600 });
@@ -763,7 +764,7 @@ const adminContact = createAdminContactHandlers({
   formatJoinSummary,
   clipboard,
   openExternal: (url) => shell.openExternal(url),
-  clientVersion: pkg.version,
+  clientVersion: APP_VERSION,
   onSaved: () => sendToJoinWindow('servers:changed', {}),
   logWarn,
 });
@@ -844,6 +845,8 @@ app.on('certificate-error', (_event, webContents, _url, error) => {
   noteCertificateError(webContents, name);
 });
 
+ipcMain.handle('app:get-version', () => APP_VERSION);
+
 function registerUpdateIpc() {
   async function runAppUpdate(download) {
     let osRelease = '';
@@ -855,7 +858,7 @@ function registerUpdateIpc() {
       }
     }
     const result = await checkForAppUpdate({
-      currentVersion: pkg.version,
+      currentVersion: APP_VERSION,
       platform: process.platform,
       osRelease,
       downloadsDir: app.getPath('downloads'),
@@ -905,9 +908,8 @@ app.whenReady().then(() => {
   menuPlacement.setPlain();
   ensureServersFile(serversFilePath);
   const gpuMode = gpuPrefsAtStartup.preferSoftwareWebgl ? 'software' : 'hardware';
-  const version = pkg.version || 'unknown';
   const cacheMb = Math.round(diskCache.limitBytes / (1024 * 1024));
-  logInfo(`Starting ${pkg.name} v${version} (GPU mode: ${gpuMode}, mud: ${isMudEnabled() ? 'on' : 'off'}, cache: ${cacheMb} MB (${diskCache.mode}))`);
+  logInfo(`Starting ${pkg.name} v${APP_VERSION} (GPU mode: ${gpuMode}, mud: ${isMudEnabled() ? 'on' : 'off'}, cache: ${cacheMb} MB (${diskCache.mode}))`);
 
   createWindow();
 

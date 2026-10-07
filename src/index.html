@@ -8,9 +8,9 @@
   </head>
   <body>
     <header class="app-header">
-      <div class="header-brand">
+      <div class="header-identity">
         <h1 class="app-title">Chris's Custom FLC MultiOS</h1>
-        <span class="version-badge" id="app-version">v0.5.5</span>
+        <span class="version-badge" id="app-version" hidden></span>
       </div>
       <div class="header-toolbar" role="toolbar" aria-label="Connection options">
         <label class="toolbar-toggle" title="Show the FLC MUD play-by-play window while in a game">
@@ -25,19 +25,25 @@
           <input type="checkbox" id="loading-banner-toggle" checked />
           <span>Loading banner</span>
         </label>
-        <div class="settings-io" role="group" aria-label="Settings backup">
-          <button type="button" class="btn btn-ghost btn-sm" id="settings-import-btn" title="Import servers, Mud setup, preferences and window layouts from a JSON file">Import</button>
-          <button type="button" class="btn btn-ghost btn-sm" id="settings-export-btn" title="Export servers, Mud setup, preferences and window layouts to a JSON file">Export</button>
-          <button type="button" class="btn btn-ghost btn-sm" id="check-update-btn" title="Check for a newer installer. Nothing is checked until you press this.">Check for updates</button>
+        <div class="toolbar-webgl">
+          <span class="webgl-badge" id="webgl-status" title="WebGL rendering mode">WebGL: —</span>
+          <div class="webgl-override" role="group" aria-label="WebGL override">
+            <label class="sr-only" for="webgl-override-select">WebGL mode</label>
+            <select id="webgl-override-select" aria-describedby="webgl-status">
+              <option value="auto">Auto (hardware)</option>
+              <option value="hardware">Force Hardware</option>
+              <option value="software">Force Software</option>
+            </select>
+          </div>
         </div>
-        <span class="webgl-badge" id="webgl-status" title="WebGL rendering mode">WebGL: —</span>
-        <div class="webgl-override" role="group" aria-label="WebGL override">
-          <label class="sr-only" for="webgl-override-select">WebGL mode</label>
-          <select id="webgl-override-select" aria-describedby="webgl-status">
-            <option value="auto">Auto (hardware)</option>
-            <option value="hardware">Force Hardware</option>
-            <option value="software">Force Software</option>
-          </select>
+      </div>
+      <div class="header-actions">
+        <div class="settings-io" role="group" aria-label="Settings backup">
+          <button type="button" class="btn btn-secondary btn-sm" id="settings-import-btn" title="Import servers, Mud setup, preferences and window layouts from a JSON file">Import</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="settings-export-btn" title="Export servers, Mud setup, preferences and window layouts to a JSON file">Export</button>
+        </div>
+        <div class="settings-updates" role="group" aria-label="App updates">
+          <button type="button" class="btn btn-sm btn-check-update" id="check-update-btn" data-mode="check" title="Check for a newer installer. Nothing is checked until you press this.">Check for updates</button>
         </div>
       </div>
     </header>

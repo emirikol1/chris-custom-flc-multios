@@ -16,6 +16,16 @@
     return pending;
   }
 
+  function hostedForge(card) {
+    var node = card.querySelector(".server-card-url");
+    var host = node ? String(node.textContent || "") : "";
+    host = host.trim().toLowerCase();
+    if (host.charAt(host.length - 1) === ".") host = host.slice(0, -1);
+    var colon = host.lastIndexOf(":");
+    if (colon > 0 && host.indexOf("]") < 0) host = host.slice(0, colon);
+    return host === "forge-vtt.com" || host.slice(-14) === ".forge-vtt.com";
+  }
+
   function paint(card, serverId) {
     if (!card || !serverId) return;
     var token = epoch;
@@ -23,7 +33,8 @@
       var row = rows && rows[serverId];
       if (token !== epoch) return;
       if (!card.isConnected) return;
-      if (!row || row.slow !== true || row.dismissed === true) return;
+      if (!row || row.slow !== true || row.dismissed === true || row.proxy !== "nginx") return;
+      if (hostedForge(card)) return;
       if (card.querySelector("[data-slow-cache]")) return;
       var line = document.createElement("p");
       var button = document.createElement("button");

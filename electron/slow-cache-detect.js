@@ -116,6 +116,34 @@ function noteResponse(counts, details, origin) {
 }
 
 /**
+ * Foundry's own hosting. The player cannot apply the nginx snippet there.
+ * @param {unknown} hostname
+ * @returns {boolean}
+ */
+function isForgeVttHost(hostname) {
+  let host = String(hostname || '').trim().toLowerCase();
+  if (!host) return false;
+  if (host.endsWith('.')) host = host.slice(0, -1);
+  const colon = host.lastIndexOf(':');
+  if (colon > 0 && host.indexOf(']') === -1) host = host.slice(0, colon);
+  return host === 'forge-vtt.com' || host.endsWith('.forge-vtt.com');
+}
+
+/**
+ * The admin note is only for the nginx no-cache pattern a server admin can change.
+ * forge-vtt.com (and its worlds) are excluded. An empty host is not forge.
+ * @param {unknown} summary
+ * @param {unknown} hostname
+ * @returns {boolean}
+ */
+function adviceApplies(summary, hostname) {
+  if (!summary || summary.slow !== true) return false;
+  if (summary.proxy !== 'nginx') return false;
+  if (isForgeVttHost(hostname)) return false;
+  return true;
+}
+
+/**
  * @param {unknown} counts
  * @returns {{ slow: boolean, proxy: 'nginx' | 'other', total: number, noCache: number }}
  */
@@ -196,6 +224,8 @@ module.exports = {
   emptyCounts,
   isNoCacheControl,
   isNginxServer,
+  isForgeVttHost,
+  adviceApplies,
   noteResponse,
   summarize,
   noteCompleted,
