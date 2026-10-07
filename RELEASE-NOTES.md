@@ -1,6 +1,10 @@
-# v0.6.3
+# v0.6.4
 
 Chris's Custom FLC MultiOS — Foundry VTT join client for Windows, macOS, and Linux.
+
+## What's new in 0.6.4
+
+- Popping a window out or back in is saved immediately. Quitting the app keeps that pop-out state, and the window still reopens where you left it.
 
 ## What's new in 0.6.3
 

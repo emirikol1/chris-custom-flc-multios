@@ -204,6 +204,66 @@ function removeEntry(layout, desc) {
 }
 
 /**
+ * Set one window's pop-out mode in a stored layout. A newly popped-out window
+ * is added. Popping an unknown window back in leaves the record unchanged.
+ * @param {unknown} record
+ * @param {unknown} desc
+ * @param {unknown} mode
+ * @param {{ now?: () => string, displays?: unknown[] }} [opts]
+ * @returns {{ windows: LayoutEntry[], savedAt: string, desktop: ReturnType<typeof desktopSignature> } | null}
+ */
+function setEntryMode(record, desc, mode, opts = {}) {
+  const clean = sanitizeDescriptor(desc);
+  if (!clean || (mode !== 'popout' && mode !== 'window')) return null;
+  const base = record && typeof record === 'object' ? /** @type {any} */ (record) : {};
+  const windows = readLayout(base);
+  const key = descriptorKey(clean);
+  let found = false;
+  const next = windows.map((entry) => {
+    if (descriptorKey(entry) !== key) return entry;
+    found = true;
+    return { ...entry, mode: /** @type {'window' | 'popout'} */ (mode) };
+  });
+  if (!found) {
+    if (mode !== 'popout') {
+      return {
+        windows,
+        savedAt: typeof base.savedAt === 'string' ? base.savedAt : '',
+        desktop: Array.isArray(base.desktop) ? base.desktop : desktopSignature(/** @type {any} */ (opts.displays)),
+      };
+    }
+    next.push({ ...clean, mode: 'popout', pos: {}, minimized: false });
+  }
+  const now = typeof opts.now === 'function' ? opts.now : () => new Date().toISOString();
+  const desktop = Array.isArray(base.desktop) && base.desktop.length > 0
+    ? base.desktop
+    : desktopSignature(/** @type {any} */ (opts.displays));
+  return { windows: dedupeEntries(next), savedAt: now(), desktop };
+}
+
+/**
+ * A shutdown snapshot can run after the pop-out windows are already gone.
+ * Keep every window that was popped out in the previous record popped out.
+ * @param {unknown} previous
+ * @param {unknown} next
+ */
+function preservePopoutModes(previous, next) {
+  if (!next || typeof next !== 'object' || !Array.isArray(/** @type {any} */ (next).windows)) return next;
+  const kept = readLayout(previous).filter((entry) => entry.mode === 'popout');
+  if (kept.length === 0) return next;
+  const byKey = new Map(kept.map((entry) => [descriptorKey(entry), entry]));
+  const windows = /** @type {any} */ (next).windows.map((entry) => {
+    const key = descriptorKey(entry);
+    const prev = byKey.get(key);
+    if (!prev) return entry;
+    byKey.delete(key);
+    return entry.mode === 'popout' ? entry : { ...entry, mode: 'popout' };
+  });
+  for (const prev of byKey.values()) windows.push(prev);
+  return { .../** @type {any} */ (next), windows: dedupeEntries(windows) };
+}
+
+/**
  * Cheap structural equality used to avoid rewriting an unchanged layout.
  * @param {{ windows: LayoutEntry[] } | null | undefined} a
  * @param {{ windows: LayoutEntry[] } | null | undefined} b
@@ -555,6 +615,8 @@ module.exports = {
   desktopSignature,
   sameDesktop,
   layoutRecordFromSnapshot,
+  setEntryMode,
+  preservePopoutModes,
   removeEntry,
   sameLayout,
   SNAPSHOT_LAYOUT_SCRIPT,

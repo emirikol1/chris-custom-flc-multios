@@ -12,6 +12,8 @@ import {
   desktopSignature,
   sameDesktop,
   layoutRecordFromSnapshot,
+  setEntryMode,
+  preservePopoutModes,
   layoutRecordKey,
   popoutBoundsKey,
   readLayout,
@@ -128,6 +130,51 @@ describe('layout records', () => {
     expect(sameDesktop(undefined, one)).toBe(false);
     // stored signature (plain rects) compares against live displays
     expect(sameDesktop(desktopSignature(one), one)).toBe(true);
+  });
+
+  it('saves a pop-out as soon as it happens, and a pop-in the same way', () => {
+    const stored = {
+      windows: [{ ...DOC, mode: 'window', pos: { left: 12, top: 8 }, minimized: false }],
+      savedAt: 'T0',
+      desktop: [{ x: 0, y: 0, width: 1920, height: 1080 }],
+    };
+    const popped = setEntryMode(stored, DOC, 'popout', { now: () => 'T1' });
+    expect(popped.savedAt).toBe('T1');
+    expect(popped.desktop).toEqual(stored.desktop);
+    expect(popped.windows).toEqual([
+      { ...DOC, mode: 'popout', pos: { left: 12, top: 8 }, minimized: false },
+    ]);
+    const docked = setEntryMode(popped, DOC, 'window', { now: () => 'T2' });
+    expect(docked.windows[0].mode).toBe('window');
+    expect(docked.windows[0].pos).toEqual({ left: 12, top: 8 });
+    const added = setEntryMode({ windows: [] }, TAB, 'popout', { now: () => 'T3' });
+    expect(added.windows).toEqual([{ ...TAB, mode: 'popout', pos: {}, minimized: false }]);
+    expect(setEntryMode({ windows: [] }, TAB, 'window').windows).toEqual([]);
+    expect(setEntryMode(stored, { kind: 'app', cls: 'Dialog' }, 'popout')).toBeNull();
+  });
+
+  it('keeps a popped-out window popped out when a later snapshot sees it docked', () => {
+    const previous = {
+      windows: [
+        { ...DOC, mode: 'popout', pos: { left: 4 } },
+        { ...TAB, mode: 'window', pos: { left: 9 } },
+      ],
+    };
+    const next = {
+      windows: [{ ...DOC, mode: 'window', pos: { left: 4 } }],
+      savedAt: 'later',
+      desktop: [],
+    };
+    const kept = preservePopoutModes(previous, next);
+    expect(kept.windows).toEqual([
+      { ...DOC, mode: 'popout', pos: { left: 4 } },
+    ]);
+    const missing = preservePopoutModes(previous, { windows: [], savedAt: 'later', desktop: [] });
+    expect(missing.windows).toEqual([
+      { ...DOC, mode: 'popout', pos: { left: 4 }, minimized: false },
+    ]);
+    const docked = setEntryMode(previous, DOC, 'window', { now: () => 'T' });
+    expect(preservePopoutModes(docked, next).windows[0].mode).toBe('window');
   });
 
   it('removes by identity and compares structurally', () => {

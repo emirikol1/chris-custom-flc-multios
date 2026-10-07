@@ -83,6 +83,7 @@ const {
   closeServerConfigWindow,
 } = require('./server-config-window');
 const {
+  flushSessionLayoutsForQuit,
   registerGameIpc,
   injectCaptureIntoLiveWindows,
   runInLiveGameWindows,
@@ -1021,7 +1022,8 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => {
+let quitLayoutFlushed = false;
+app.on('before-quit', (event) => {
   try {
     problemLog.closeAll('quit');
   } catch (err) {
@@ -1032,6 +1034,15 @@ app.on('before-quit', () => {
   } catch (err) {
     logWarn('[main] session clean mark failed', { error: err && err.name ? err.name : 'Error' });
   }
+  if (quitLayoutFlushed) return;
+  quitLayoutFlushed = true;
+  event.preventDefault();
+  Promise.resolve()
+    .then(() => flushSessionLayoutsForQuit())
+    .catch((err) => {
+      logWarn('[main] layout flush failed', { error: err && err.name ? err.name : 'Error' });
+    })
+    .then(() => app.quit());
 });
 
 ipcMain.handle('app:copy-text', (_event, text) => {

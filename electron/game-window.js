@@ -78,6 +78,8 @@ const {
   readLayout,
   sameDesktop,
   layoutRecordFromSnapshot,
+  setEntryMode,
+  preservePopoutModes,
   removeEntry,
   SNAPSHOT_LAYOUT_SCRIPT,
   buildTagPopoutScript,
@@ -693,6 +695,8 @@ function sessionLayoutKey(serverId, incognito) {
 // ---------------------------------------------------------------------------
 
 const SNAPSHOT_INTERVAL_MS = 3000;
+/** Set before quit closes windows, so a late snapshot cannot dock a popped-out window. */
+let appQuitting = false;
 const IDENTIFY_POLL_MS = 400;
 const IDENTIFY_TIMEOUT_MS = 15000;
 const READY_POLL_MS = 500;
@@ -772,6 +776,9 @@ function createLayoutCtx(layoutKey) {
     seenGameDoc: false,
     gameDocUrl: '',
     snapshotsSuspended: false,
+    quitSnapshotDone: false,
+    layoutGen: 0,
+    modeLocks: new Map(),
     pendingEntry: null,
     popouts: new Map(),
     snapshotTimer: null,
@@ -785,10 +792,52 @@ function createLayoutCtx(layoutKey) {
  * @param {unknown} raw result of SNAPSHOT_LAYOUT_SCRIPT (or IPC payload)
  * @returns {boolean} saved
  */
-function saveLayoutSnapshot(ctx, raw) {
+function saveLayoutSnapshot(ctx, raw, opts) {
   if (!deps.windowState || !ctx.sessionScoped) return false;
+  if (ctx.quitSnapshotDone && !(opts && opts.quitFlush)) return false;
   if (ctx.restoring || !ctx.restoreDone || ctx.snapshotsSuspended) return false;
-  const record = layoutRecordFromSnapshot(raw, { displays: currentDisplays() });
+  let record = layoutRecordFromSnapshot(raw, { displays: currentDisplays() });
+  if (!record) return false;
+  if (ctx.modeLocks && ctx.modeLocks.size > 0) {
+    for (const locked of ctx.modeLocks.values()) {
+      const updated = setEntryMode(record, locked.desc, locked.mode, {
+        displays: currentDisplays(),
+        now: () => record.savedAt,
+      });
+      if (updated) record = updated;
+    }
+    ctx.modeLocks.clear();
+  }
+  if (appQuitting) {
+    const kept = preservePopoutModes(deps.windowState.get(layoutRecordKey(ctx.layoutKey)), record);
+    if (kept) record = kept;
+  }
+  const sig = JSON.stringify({ w: record.windows, d: record.desktop });
+  if (sig === ctx.lastSaved) return false;
+  deps.windowState.set(layoutRecordKey(ctx.layoutKey), record);
+  ctx.lastSaved = sig;
+  return true;
+}
+
+/**
+ * Write one window's pop-out mode now. The periodic snapshot is too late:
+ * quitting the app closes the pop-out windows before that snapshot runs.
+ * @param {LayoutCtx} ctx
+ * @param {unknown} desc
+ * @param {'window' | 'popout'} mode
+ * @returns {boolean}
+ */
+function persistEntryMode(ctx, desc, mode) {
+  if (!deps.windowState || !ctx || !ctx.sessionScoped) return false;
+  if (ctx.restoring || !ctx.restoreDone || ctx.snapshotsSuspended) return false;
+  const clean = sanitizeDescriptor(desc);
+  if (!clean || (mode !== 'popout' && mode !== 'window')) return false;
+  if (!ctx.modeLocks) ctx.modeLocks = new Map();
+  ctx.modeLocks.set(descriptorKey(clean), { desc: clean, mode });
+  ctx.layoutGen = (ctx.layoutGen || 0) + 1;
+  const record = setEntryMode(deps.windowState.get(layoutRecordKey(ctx.layoutKey)), clean, mode, {
+    displays: currentDisplays(),
+  });
   if (!record) return false;
   const sig = JSON.stringify({ w: record.windows, d: record.desktop });
   if (sig === ctx.lastSaved) return false;
@@ -801,17 +850,36 @@ function saveLayoutSnapshot(ctx, raw) {
  * @param {import('electron').BrowserWindow} win
  * @param {LayoutCtx} ctx
  */
-async function snapshotNow(win, ctx) {
+async function snapshotNow(win, ctx, opts) {
   if (!win || win.isDestroyed()) return false;
+  const gen = ctx.layoutGen || 0;
   try {
     const raw = await withTimeout(
       win.webContents.executeJavaScript(SNAPSHOT_LAYOUT_SCRIPT, true),
       CLOSE_FLUSH_TIMEOUT_MS,
     );
-    return saveLayoutSnapshot(ctx, raw);
+    if ((ctx.layoutGen || 0) !== gen) return false;
+    return saveLayoutSnapshot(ctx, raw, opts);
   } catch {
     return false;
   }
+}
+
+/**
+ * Save every open session's pop-out state before quit closes those windows.
+ * @returns {Promise<void>}
+ */
+function flushSessionLayoutsForQuit() {
+  appQuitting = true;
+  const jobs = [];
+  for (const win of liveGameWindows) {
+    if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) continue;
+    const ctx = layoutCtxByWebContents.get(win.webContents);
+    if (!ctx || !ctx.sessionScoped || !ctx.restoreDone || ctx.snapshotsSuspended) continue;
+    ctx.quitSnapshotDone = true;
+    jobs.push(snapshotNow(win, ctx, { quitFlush: true }).catch(() => false));
+  }
+  return Promise.all(jobs).then(() => {});
 }
 
 /**
@@ -966,6 +1034,7 @@ async function identifyPopout(parent, child, entry, ctx) {
       }
       if (!same) trackPopoutAs(child, entry, key);
       entry.desc = desc;
+      if (!ctx.restoring) persistEntryMode(ctx, desc, 'popout');
       logInfo('[game-window] popout identified', { kind: desc.kind, restoredBounds: hadSaved });
       keepPopoutFitted(child).catch(() => {});
       return;
@@ -1228,8 +1297,10 @@ function enablePopouts(parent, gameSession, ctx) {
     identifyPopout(parent, child, entry, ctx).catch(() => {});
 
     child.on('closed', () => {
+      const desc = entry.desc;
       ctx.popouts.delete(child);
       releasePopoutSlot(ctx.layoutKey, slot);
+      if (!ctx.parentClosing && !appQuitting && desc) persistEntryMode(ctx, desc, 'window');
       logInfo('[game-window] popout closed', { slot });
     });
   });
@@ -2486,13 +2557,19 @@ function openGameWindow(payload, gpuPrefsPath) {
     if (ctx.closeFlushed) return;
     ctx.closeFlushed = true;
     if (!ctx.sessionScoped || !ctx.restoreDone) return;
+    const saveBounds = () => {
+      if (!deps.windowState) return;
+      for (const [child, entry] of ctx.popouts) {
+        if (!child.isDestroyed()) deps.windowState.save(child, entry.key);
+      }
+    };
+    if (ctx.quitSnapshotDone) {
+      saveBounds();
+      return;
+    }
     event.preventDefault();
     const finish = () => {
-      if (deps.windowState) {
-        for (const [child, entry] of ctx.popouts) {
-          if (!child.isDestroyed()) deps.windowState.save(child, entry.key);
-        }
-      }
+      saveBounds();
       if (!win.isDestroyed()) win.close();
     };
     snapshotNow(win, ctx).then(finish, finish);
@@ -2934,6 +3011,7 @@ function gameWindowForPopout(win) {
 
 module.exports = {
   openGameWindow,
+  flushSessionLayoutsForQuit,
   registerGameIpc,
   forgetSessionLayout,
   sessionLayoutKey,
