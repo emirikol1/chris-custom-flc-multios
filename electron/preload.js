@@ -1,4 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
+// Sandboxed preloads cannot require local files; keep in step with slow-cache-ipc.js.
+const IPC = { list: 'slowcache:list', copy: 'slowcache:copy', updated: 'slowcache:updated' };
 
 /**
  * @param {string} channel
@@ -19,6 +21,7 @@ contextBridge.exposeInMainWorld('flc', {
     update: (id, patch) => ipcRenderer.invoke('servers:update', id, patch),
     delete: (id) => ipcRenderer.invoke('servers:delete', id),
     getUsers: (url, serverId) => ipcRenderer.invoke('servers:get-users', url, serverId),
+    cacheInfo: () => ipcRenderer.invoke('servers:cache-info'),
   },
   game: {
     connect: (payload) => ipcRenderer.invoke('game:connect', payload),
@@ -47,7 +50,14 @@ contextBridge.exposeInMainWorld('flc', {
     check: () => ipcRenderer.invoke('app:check-update'),
     download: () => ipcRenderer.invoke('app:download-update'),
   },
+  copyText: (text) => ipcRenderer.invoke('app:copy-text', text),
+  slowCache: {
+    list: () => ipcRenderer.invoke(IPC.list),
+    copy: (serverId) => ipcRenderer.invoke(IPC.copy, serverId),
+    onUpdated: subscribe(IPC.updated),
+  },
   onServersChanged: subscribe('servers:changed'),
+  onCacheChanged: subscribe('servers:cache-changed'),
   ai: {
     getPresets: () => ipcRenderer.invoke('ai:get-presets'),
     getSettings: () => ipcRenderer.invoke('ai:get-settings'),

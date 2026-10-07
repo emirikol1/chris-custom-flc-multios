@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Connecting</title>
+    <link rel="stylesheet" href="load-notice.css" />
+  </head>
+  <body>
+    <main class="card">
+      <h1>Connecting…</h1>
+      <p>This server's configuration could be optimized to improve client performance. While connecting, the client re-checks about a thousand unchanged files before the loading screen can appear, which is why this window stays dark for a little while.</p>
+      <p>If you want, you can copy the message below for the server admin to review.</p>
+      <pre id="preview" class="preview">Loading the message…</pre>
+      <button type="button" id="copy">Copy message for the server admin</button>
+      <p class="dismiss-row"><a href="#" id="dismiss">Don't show again for this server</a></p>
+    </main>
+    <script src="load-notice.js"></script>
+  </body>
+</html>

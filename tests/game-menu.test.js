@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gameWindowMenuTemplate } from '../electron/game-menu.js';
+import { gameWindowMenuTemplate, plainAppMenuTemplate } from '../electron/game-menu.js';
 
 function viewMenu(template) {
   return template.find((item) => item.label === 'View');
@@ -22,17 +22,32 @@ describe('game window View menu', () => {
     const roles = view.submenu.map((item) => item.role).filter(Boolean);
     expect(roles).toEqual([
       'reload',
-      'forceReload',
       'toggleDevTools',
       'resetZoom',
       'zoomIn',
       'zoomOut',
       'togglefullscreen',
     ]);
+    expect(roles).not.toContain('forceReload');
+    const refresh = view.submenu.find((item) => item.id === 'full-refresh');
+    expect(refresh.label).toBe('Full Refresh (clear cache)');
+    expect(refresh.accelerator).toBe('CmdOrCtrl+Shift+R');
     const item = centerItem(template);
     expect(item.label).toBe('Prompt windows always on main window');
     expect(item.type).toBe('checkbox');
     expect(item.checked).toBe(true);
+  });
+
+  it('runs Full Refresh from the View menu', () => {
+    const seen = [];
+    const template = gameWindowMenuTemplate({
+      onFullRefresh: () => seen.push('refresh'),
+    });
+    const item = viewMenu(template).submenu.find((entry) => entry.id === 'full-refresh');
+    item.click();
+    expect(seen).toEqual(['refresh']);
+    expect(() => gameWindowMenuTemplate().find((entry) => entry.label === 'View')
+      .submenu.find((entry) => entry.id === 'full-refresh').click()).not.toThrow();
   });
 
   it('checks the box from the stored server choice and reports toggles', () => {
@@ -95,5 +110,91 @@ describe('game window View menu', () => {
     expect(offMenu.submenu.find((item) => item.id === 'prompt-highlight-toggle').checked).toBe(false);
     expect(offMenu.submenu.find((item) => item.id === 'prompt-auto-raise').checked).toBe(false);
     expect(offMenu.submenu.find((item) => item.id === 'prompt-glow-white').checked).toBe(true);
+  });
+
+  it('adds a Diagnostics submenu with stats, logging, and report actions', () => {
+    const seen = [];
+    const template = gameWindowMenuTemplate({
+      verboseLogging: true,
+      onOpenWorldStats: () => seen.push('stats'),
+      onToggleVerboseLogging: (enabled) => seen.push(enabled),
+      onOpenLogs: () => seen.push('logs'),
+      onOpenProblemLog: () => seen.push('problem'),
+      onCopyTroubleshooting: () => seen.push('copy'),
+      onSaveDiagnostics: () => seen.push('save'),
+    });
+    const view = viewMenu(template);
+    const menu = view.submenu.find((item) => item.id === 'diagnostics');
+    expect(menu.label).toBe('Diagnostics');
+    const refresh = view.submenu.find((item) => item.id === 'full-refresh');
+    expect(view.submenu.indexOf(refresh)).toBeLessThan(view.submenu.indexOf(menu));
+    expect(menu.submenu.map((item) => item.id).filter(Boolean)).toEqual([
+      'world-stats',
+      'verbose-logging',
+      'open-logs',
+      'open-problem-log',
+      'copy-ts',
+      'save-diagnostics',
+    ]);
+    const stats = menu.submenu.find((item) => item.id === 'world-stats');
+    expect(stats.label).toBe('World Statistics…');
+    expect(stats.accelerator).toBe('CmdOrCtrl+Shift+S');
+    const verbose = menu.submenu.find((item) => item.id === 'verbose-logging');
+    expect(verbose.label).toBe('Verbose logging (this session)');
+    expect(verbose.type).toBe('checkbox');
+    expect(verbose.checked).toBe(true);
+    expect(menu.submenu.find((item) => item.id === 'open-logs').label).toBe('Open logs folder');
+    expect(menu.submenu.find((item) => item.id === 'open-problem-log').label).toBe('Open problem log');
+    expect(menu.submenu.find((item) => item.id === 'copy-ts').label).toBe('Copy troubleshooting info');
+    expect(menu.submenu.find((item) => item.id === 'save-diagnostics').label).toBe('Save diagnostics file…');
+    stats.click();
+    verbose.click({ checked: false });
+    menu.submenu.find((item) => item.id === 'open-logs').click();
+    menu.submenu.find((item) => item.id === 'open-problem-log').click();
+    menu.submenu.find((item) => item.id === 'copy-ts').click();
+    menu.submenu.find((item) => item.id === 'save-diagnostics').click();
+    expect(seen).toEqual(['stats', false, 'logs', 'problem', 'copy', 'save']);
+    expect(gameWindowMenuTemplate().find((item) => item.label === 'View')
+      .submenu.find((item) => item.id === 'diagnostics')
+      .submenu.find((item) => item.id === 'verbose-logging').checked).toBe(false);
+    expect(() => gameWindowMenuTemplate().find((item) => item.label === 'View')
+      .submenu.find((item) => item.id === 'diagnostics')
+      .submenu.forEach((item) => {
+        if (typeof item.click === 'function') item.click({ checked: true });
+      })).not.toThrow();
+  });
+
+  it('prepends the Apple menu only when the platform is darwin', () => {
+    expect(gameWindowMenuTemplate({ platform: 'darwin' })[0]).toEqual({ role: 'appMenu' });
+    expect(gameWindowMenuTemplate({ platform: 'darwin' })[1]).toEqual({ role: 'fileMenu' });
+    expect(gameWindowMenuTemplate({ platform: 'win32' })[0]).toEqual({ role: 'fileMenu' });
+    expect(gameWindowMenuTemplate({ platform: 'linux' })[0]).toEqual({ role: 'fileMenu' });
+    expect(gameWindowMenuTemplate()[0]).toEqual({ role: 'fileMenu' });
+  });
+});
+
+describe('plain application menu', () => {
+  it('is app, edit, reload/zoom/devtools, and window — no prompt or glow items', () => {
+    const template = plainAppMenuTemplate();
+    expect(template.map((item) => item.role || item.label)).toEqual([
+      'appMenu',
+      'editMenu',
+      'View',
+      'windowMenu',
+    ]);
+    const view = template.find((item) => item.label === 'View');
+    expect(view.submenu.map((item) => item.role).filter(Boolean)).toEqual([
+      'reload',
+      'resetZoom',
+      'zoomIn',
+      'zoomOut',
+      'toggleDevTools',
+    ]);
+    const dumped = JSON.stringify(template);
+    expect(dumped).not.toContain('Highlight');
+    expect(dumped).not.toContain('full-refresh');
+    expect(dumped).not.toContain('diagnostics');
+    expect(dumped).not.toContain('center-prompts');
+    expect(dumped).not.toContain('forceReload');
   });
 });

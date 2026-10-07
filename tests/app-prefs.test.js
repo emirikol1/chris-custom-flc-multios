@@ -11,7 +11,12 @@ function tmpPrefsPath() {
   return path.join(dir, 'nested', 'app-prefs.json');
 }
 
-const DEFAULTS = { mudEnabled: false, serversCollapsed: false, mudCollapsed: false };
+const DEFAULTS = {
+  mudEnabled: false,
+  serversCollapsed: false,
+  mudCollapsed: false,
+  loadingBannerEnabled: true,
+};
 
 afterEach(() => {
   for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
@@ -36,18 +41,19 @@ describe('app-prefs', () => {
     const p = tmpPrefsPath();
     writeAppPrefs(p, { mudEnabled: true });
     expect(writeAppPrefs(p, { serversCollapsed: true })).toEqual({
+      ...DEFAULTS,
       mudEnabled: true,
       serversCollapsed: true,
-      mudCollapsed: false,
     });
     expect(writeAppPrefs(p, { mudCollapsed: 1 })).toEqual({
+      ...DEFAULTS,
       mudEnabled: true,
       serversCollapsed: true,
       mudCollapsed: true,
     });
     expect(writeAppPrefs(p, { serversCollapsed: false })).toEqual({
+      ...DEFAULTS,
       mudEnabled: true,
-      serversCollapsed: false,
       mudCollapsed: true,
     });
   });
@@ -64,5 +70,34 @@ describe('app-prefs', () => {
     fs.mkdirSync(path.dirname(p), { recursive: true });
     fs.writeFileSync(p, '{not json');
     expect(readAppPrefs(p)).toEqual(DEFAULTS);
+  });
+
+  it('ignores a leftover diskCacheMb and does not write it back', () => {
+    const p = tmpPrefsPath();
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, JSON.stringify({ mudEnabled: true, diskCacheMb: 4096, extra: true }));
+    expect(readAppPrefs(p)).toEqual({ ...DEFAULTS, mudEnabled: true });
+    expect(readAppPrefs(p).diskCacheMb).toBeUndefined();
+    writeAppPrefs(p, { serversCollapsed: true });
+    expect(JSON.parse(fs.readFileSync(p, 'utf8'))).toEqual({
+      mudEnabled: true,
+      serversCollapsed: true,
+      mudCollapsed: false,
+      loadingBannerEnabled: true,
+    });
+  });
+
+  it('defaults a missing loading-banner key to true and coerces non-booleans', () => {
+    const p = tmpPrefsPath();
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, JSON.stringify({ mudEnabled: true }));
+    const read = readAppPrefs(p);
+    expect(read.loadingBannerEnabled).toBe(true);
+    expect(writeAppPrefs(p, { loadingBannerEnabled: 'yes' })).toMatchObject({
+      loadingBannerEnabled: true,
+    });
+    expect(writeAppPrefs(p, { loadingBannerEnabled: '' })).toMatchObject({
+      loadingBannerEnabled: false,
+    });
   });
 });

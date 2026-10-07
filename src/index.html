@@ -10,7 +10,7 @@
     <header class="app-header">
       <div class="header-brand">
         <h1 class="app-title">Chris's Custom FLC MultiOS</h1>
-        <span class="version-badge" id="app-version">v0.5.4</span>
+        <span class="version-badge" id="app-version">v0.5.5</span>
       </div>
       <div class="header-toolbar" role="toolbar" aria-label="Connection options">
         <label class="toolbar-toggle" title="Show the FLC MUD play-by-play window while in a game">
@@ -20,6 +20,10 @@
         <label class="toolbar-toggle" title="Connect in a private session">
           <input type="checkbox" id="incognito-toggle" />
           <span>Incognito</span>
+        </label>
+        <label class="toolbar-toggle" title="Show the animated banner on the loading screen.">
+          <input type="checkbox" id="loading-banner-toggle" checked />
+          <span>Loading banner</span>
         </label>
         <div class="settings-io" role="group" aria-label="Settings backup">
           <button type="button" class="btn btn-ghost btn-sm" id="settings-import-btn" title="Import servers, Mud setup, preferences and window layouts from a JSON file">Import</button>
@@ -126,6 +130,7 @@
     <div id="notifications" class="notifications" aria-live="polite" aria-relevant="additions"></div>
 
     <script src="renderer-log.js"></script>
+    <script src="slow-cache-badge.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

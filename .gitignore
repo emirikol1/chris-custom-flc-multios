@@ -28,3 +28,5 @@ dist/*.blockmap
 
 # Machine-specific generated launchers
 Chris' Custom FLC.desktop
+perf.data*
+scripts/secure-erase-system-logs*.sh

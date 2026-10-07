@@ -12,6 +12,7 @@
     serverListEmpty: $("#server-list-empty"),
     incognito: $("#incognito-toggle"),
     mudToggle: $("#mud-toggle"),
+    loadingBannerToggle: $("#loading-banner-toggle"),
     webglStatus: $("#webgl-status"),
     webglOverride: $("#webgl-override-select"),
     notifications: $("#notifications"),
@@ -69,6 +70,68 @@
     }
   }
 
+  /** @type {Record<string, { cacheBytes?: number | null, objects?: number | null }>} */
+  let cacheByServer = {};
+  let cacheReq = 0;
+
+  function formatBytes(value) {
+    if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+    const sign = value < 0 ? "-" : "";
+    let abs = Math.abs(value);
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let index = 0;
+    while (abs >= 1024 && index < units.length - 1) {
+      abs /= 1024;
+      index += 1;
+    }
+    if (index === 0) {
+      const rounded = Math.round(abs);
+      return `${rounded === 0 ? "" : sign}${rounded} B`;
+    }
+    const text = abs.toFixed(1);
+    const shown = text.endsWith(".0") ? text.slice(0, -2) : text;
+    return `${shown === "0" ? "" : sign}${shown} ${units[index]}`;
+  }
+
+  function cacheLine(info) {
+    if (!info || typeof info !== "object") return "";
+    const bytes = info.cacheBytes;
+    const objects = info.objects;
+    const bytesMissing = !(typeof bytes === "number" && Number.isFinite(bytes));
+    const objectsMissing = !(typeof objects === "number" && Number.isFinite(objects));
+    if ((bytesMissing || bytes === 0) && objectsMissing) return "";
+    const bytesText = bytesMissing ? "—" : formatBytes(bytes);
+    let line = `cache ${bytesText}`;
+    if (!objectsMissing) line += ` · ${Math.round(objects)} objects`;
+    return line;
+  }
+
+  function applyCacheBadges() {
+    const nodes = document.querySelectorAll("[data-cache-for]");
+    for (const node of nodes) {
+      const id = node.getAttribute("data-cache-for");
+      const text = cacheLine(id ? cacheByServer[id] : null);
+      node.textContent = text;
+      node.hidden = !text;
+      if (text) node.title = text;
+      else node.removeAttribute("title");
+    }
+  }
+
+  async function refreshCacheInfo() {
+    const readCache = window.flc?.servers?.cacheInfo;
+    if (typeof readCache !== "function") return;
+    const token = ++cacheReq;
+    try {
+      const info = await readCache();
+      if (token !== cacheReq) return;
+      cacheByServer = info && typeof info === "object" ? info : {};
+      applyCacheBadges();
+    } catch {
+      // Leave the list as rendered. A later cache event can fill the badges in.
+    }
+  }
+
   /**
    * @param {string} message
    * @param {'info'|'warn'|'error'} [level]
@@ -84,6 +147,39 @@
     p.className = "toast-message";
     p.textContent = message;
     toast.appendChild(p);
+
+    if (persist && Array.isArray(options.approvalCommands)) {
+      for (const block of options.approvalCommands) {
+        if (!block || typeof block.text !== "string" || block.text.length === 0) continue;
+        const wrap = document.createElement("div");
+        wrap.className = "toast-approval";
+        const label = document.createElement("p");
+        label.className = "toast-approval-label";
+        label.textContent = typeof block.label === "string" ? block.label : "";
+        const pre = document.createElement("pre");
+        pre.className = "toast-approval-text";
+        pre.textContent = block.text;
+        const copy = document.createElement("button");
+        copy.type = "button";
+        copy.className = "btn btn-ghost btn-sm toast-approval-copy";
+        copy.textContent = "Copy";
+        copy.addEventListener("click", () => {
+          const write = window.flc && typeof window.flc.copyText === "function" ? window.flc.copyText : null;
+          if (!write) return;
+          Promise.resolve(write(block.text)).then((ok) => {
+            if (ok === false || !copy.isConnected) return;
+            copy.textContent = "Copied";
+            window.setTimeout(() => {
+              if (copy.isConnected) copy.textContent = "Copy";
+            }, 1500);
+          }).catch(() => {});
+        });
+        wrap.appendChild(label);
+        wrap.appendChild(pre);
+        wrap.appendChild(copy);
+        toast.appendChild(wrap);
+      }
+    }
 
     if (!persist) {
       const close = document.createElement("button");
@@ -133,6 +229,7 @@
       row.innerHTML = `
         <span class="server-compact-label" title="${escapeHtml(server.url)}">${escapeHtml(server.label)}</span>
         <span class="server-compact-user${user ? "" : " none"}">${escapeHtml(user || "no session user")}</span>
+        <span class="server-cache-line" data-cache-for="${escapeHtml(server.id)}" hidden></span>
         <button type="button" class="btn btn-primary btn-sm" data-action="connect">Connect</button>
       `;
       row.querySelector('[data-action="connect"]').addEventListener("click", () =>
@@ -141,6 +238,7 @@
       list.appendChild(row);
     }
     els.serverListPanel.appendChild(list);
+    applyCacheBadges();
   }
 
   function renderServerList() {
@@ -165,12 +263,13 @@
           <h3 class="server-card-label">${escapeHtml(server.label)}</h3>
           <p class="server-card-url" title="${escapeHtml(server.url)}">${escapeHtml(displayHost(server.url))}</p>
           <p class="${notesClass}">${escapeHtml(notesPreview)}</p>
+          <p class="server-cache-line" data-cache-for="${escapeHtml(server.id)}" hidden></p>
         </div>
         <div class="server-card-actions">
           <button type="button" class="btn btn-primary btn-sm" data-action="connect">Connect</button>
           <button type="button" class="btn btn-secondary btn-sm" data-action="edit">Edit</button>
           <button type="button" class="btn btn-secondary btn-sm" data-action="clone" title="New server configuration pre-filled from this one">Clone</button>
-          <button type="button" class="btn btn-ghost btn-sm" data-action="forget-layout" title="Forget this session's screen layout and prompt appearance. Next connection uses the defaults.">Forget layout</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-action="forget-layout" title="Forget this session's screen layout, prompt appearance and cached files. Login stays. Next connection uses the defaults and downloads fresh.">Forget layout</button>
           <button type="button" class="btn btn-danger btn-sm" data-action="delete">Delete</button>
         </div>
       `;
@@ -190,9 +289,12 @@
       card.querySelector('[data-action="delete"]').addEventListener("click", () =>
         handleDelete(server)
       );
+      if (typeof window.flcPaintSlowBadge === "function") window.flcPaintSlowBadge(card, server.id);
 
       els.serverList.appendChild(card);
     }
+    applyCacheBadges();
+    refreshCacheInfo();
   }
 
   /**
@@ -222,10 +324,12 @@
     try {
       const result = await forget(server.id);
       if (result == null) return;
-      showNotification(
-        `Forgot the screen layout and prompt appearance for "${server.label}". Next connection uses the defaults.`,
-        "info"
-      );
+      const cleared = result.clearedBytes;
+      const message = typeof cleared === "number" && Number.isFinite(cleared)
+        ? `Forgot the screen layout, prompt appearance and cached files for "${server.label}". Cleared ${formatBytes(cleared)}. Login stays. Next connection uses the defaults and downloads fresh.`
+        : `Forgot the screen layout and prompt appearance for "${server.label}". Next connection uses the defaults.`;
+      showNotification(message, "info");
+      refreshCacheInfo();
     } catch (err) {
       showNotification(err && err.message ? err.message : String(err), "error");
     }
@@ -738,14 +842,32 @@
       setPanelCollapsed("servers", Boolean(prefs && prefs.serversCollapsed), { persist: false });
       setPanelCollapsed("mud", Boolean(prefs && prefs.mudCollapsed), { persist: false });
       els.mudToggle.checked = Boolean(prefs && prefs.mudEnabled);
+      if (els.loadingBannerToggle) els.loadingBannerToggle.checked = !prefs || prefs.loadingBannerEnabled !== false;
       showMudPanel(els.mudToggle.checked);
     } catch (err) {
       console.warn("[FLC] prefs load failed", err);
     }
   }
 
+  async function saveBoolPref(key, checked, failText) {
+    const setPrefs = window.flc?.prefs?.set;
+    if (typeof setPrefs !== "function") return;
+    try {
+      const patch = {};
+      patch[key] = Boolean(checked);
+      await setPrefs(patch);
+    } catch (err) {
+      showNotification(failText, "error");
+    }
+  }
+
   function bindMudUi() {
     els.mudToggle.addEventListener("change", handleMudToggle);
+    if (els.loadingBannerToggle) {
+      els.loadingBannerToggle.addEventListener("change", () => {
+        saveBoolPref("loadingBannerEnabled", els.loadingBannerToggle.checked, "Could not save Loading banner preference");
+      });
+    }
     els.aiPreset.addEventListener("change", () => {
       applyPresetToForm(els.aiPreset.value);
       resetModelDropdown("Press Test Server first");
@@ -915,7 +1037,10 @@
       const status = result && result.status;
       if (status === "downloaded") {
         setUpdateButton("download");
-        showNotification(message, "info", { persist: true });
+        showNotification(message, "info", {
+          persist: true,
+          approvalCommands: result && result.approvalCommands,
+        });
       } else if (status === "error" || status === "available") {
         setUpdateButton("download");
         showNotification(message, status === "error" ? "error" : "info");
@@ -946,6 +1071,11 @@
     if (typeof window.flc?.onServersChanged === "function") {
       window.flc.onServersChanged(() => {
         loadServers();
+      });
+    }
+    if (typeof window.flc?.onCacheChanged === "function") {
+      window.flc.onCacheChanged(() => {
+        refreshCacheInfo();
       });
     }
 

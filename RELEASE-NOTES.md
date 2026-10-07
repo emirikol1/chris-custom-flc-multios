@@ -1,6 +1,16 @@
-# v0.5.4
+# v0.5.5
 
 Chris's Custom FLC MultiOS — Foundry VTT join client for Windows, macOS, and Linux.
+
+## What's new in 0.5.5
+
+- **Loading fuel gauges.** The loading card shows fuel gauges while a world is joining. On a narrow window they switch to an LED percentage.
+- **Loading banner.** A short splash clip plays on the loading card. It is on by default, and the Join window has a checkbox to turn it off. The card is colour-matched to the clip, and the clip plays with audio. It drops out when the window is too small to fit it with the gauges, and it stays off when reduced motion is on.
+- **Slow server notice.** If a server's configuration makes every join re-check unchanged package files, a black-screen window explains the wait and offers a message to copy for the admin (the nginx change). The Join window shows a badge on that server. The saved flag is a short server id and a few counts — no address.
+- **Join-time estimates.** After a server has a usual join time, the loading screen uses that estimate.
+- **Local smart caching removed.** The experimental Local smart caching option is gone.
+- **Loading overlay hang.** A mutation-observer loop in the loading overlay scripts could hang the renderer. That loop is fixed.
+- **Problem log.** View → Diagnostics → **Open problem log** opens `problem-log.jsonl` in the app data folder. The file keeps one summary line each time a warning or error starts and later ends (resolved, the window closed, or the app quit). A crash or an unresponsive page is written when it happens. A profile name that looks like an address is stored as a short server id instead. The file has no addresses or page content.
 
 ## What's new in 0.5.4
 

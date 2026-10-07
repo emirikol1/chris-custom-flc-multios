@@ -1,9 +1,38 @@
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
-const { BrowserWindow, Menu, session, app, ipcMain, screen } = require('electron');
+const { BrowserWindow, Menu, session, app, ipcMain, screen, dialog, net, shell, clipboard } = require('electron');
 const { readGpuPrefs, writeGpuPrefs } = require('./gpu-prefs');
-const { redactForLog } = require('./log-redact');
-const { logInfo, logWarn, logError } = require('./logger');
+const { logDebug, logInfo, logWarn, logError, setLogLevel, getLogLevel, MAIN_LOG_PATH } = require('./logger');
+const { shortServerHash } = require('./log-ids');
+const { classifyWebglReason } = require('./webgl-reason');
 const { buildAutologinScript, isJoinPageUrl } = require('./foundry-autologin');
+const { buildTelemetryScript, buildLoadingDetailsScript, buildReferenceLookupScript } = require('./foundry-telemetry');
+const { createBadUrlStore, shouldRecordFailure, formatBadUrlsText, failurePathname } = require('./bad-urls');
+const { formatBytes, percentile, liveFromSnapshot } = require('./join-telemetry');
+const { buildGaugesScript } = require('./gauges-script');
+const slowCache = require('./slow-cache-runtime');
+const { buildLoadingVideoScript } = require('./loading-video-script');
+const { attachMediaProtocol } = require('./media-protocol');
+const { expectedTotals, computeFills, monotonic } = require('./join-gauges');
+const { getLogsDir, getDataDir } = require('./paths');
+const { buildTroubleshootingReport } = require('./ts-report');
+const { forgetNetTrace, redactedNetTraceText } = require('./net-trace-ipc');
+const { summarizeAppMetrics, readMemAvailableBytes } = require('./system-info');
+const {
+  tailLines,
+  diagnosticsFileName,
+  buildDiagnosticsText,
+  copyDiagnosticsText,
+  saveDiagnosticsText,
+} = require('./diagnostics');
+const {
+  openWorldStatsWindow,
+  getStatsWindowFor,
+  closeStatsWindowFor,
+  pushUpdate,
+  getStatsContext,
+} = require('./world-stats-window');
 const {
   buildCenterPromptsScript,
   centerPromptsEnabled,
@@ -13,6 +42,12 @@ const {
   promptHighlightEnabled,
 } = require('./center-prompts');
 const { gameWindowMenuTemplate } = require('./game-menu');
+const { createMenuPlacement } = require('./menu-placement');
+const menuPlacement = createMenuPlacement({ platform: process.platform, Menu });
+/** @type {WeakSet<import('electron').BrowserWindow>} */
+const menuCloseBound = new WeakSet();
+/** @type {WeakMap<import('electron').BrowserWindow, import('electron').BrowserWindow>} */
+const popoutParentByWin = new WeakMap();
 const { askGlowStrength } = require('./glow-strength-prompt');
 const { driftedOntoOtherWindow, holdBounds, scheduleUnbury, unburyWindow } = require('./unbury-window');
 const { requestUserAttention } = require('./os-attention');
@@ -53,8 +88,179 @@ const promptGlowStrengthByWin = new WeakMap();
 const promptAutoRaiseByWin = new WeakMap();
 /** @type {WeakMap<import('electron').BrowserWindow, string>} */
 const serverIdByWin = new WeakMap();
+/** @type {WeakMap<import('electron').BrowserWindow, import('electron').Session>} */
+const gameSessionByWin = new WeakMap();
 /** @type {WeakMap<import('electron').BrowserWindow, () => void>} */
 const unburyCancelByWin = new WeakMap();
+/** @type {WeakMap<import('electron').BrowserWindow, string>} */
+const hubIdByWin = new WeakMap();
+/** @type {WeakMap<import('electron').WebContents, string>} */
+const hubIdByContents = new WeakMap();
+/** @type {WeakMap<import('electron').BrowserWindow, string>} */
+const labelByWin = new WeakMap();
+/** @type {WeakMap<import('electron').BrowserWindow, boolean>} */
+const incognitoByWin = new WeakMap();
+/** @type {WeakMap<import('electron').BrowserWindow, string>} */
+const layoutKeyByWin = new WeakMap();
+/** @type {WeakMap<import('electron').BrowserWindow, string>} */
+const pageTitleByWin = new WeakMap();
+/** @type {WeakMap<import('electron').BrowserWindow, boolean>} */
+const samplingByWin = new WeakMap();
+/** @type {WeakMap<import('electron').BrowserWindow, number>} */
+const intervalByWin = new WeakMap();
+/** @type {WeakMap<import('electron').BrowserWindow, number>} */
+const probeAtByWin = new WeakMap();
+/** @type {WeakMap<import('electron').BrowserWindow, boolean>} */
+const probeFlightByWin = new WeakMap();
+/** @type {WeakMap<import('electron').BrowserWindow, Promise<void>>} */
+const pushChainByWin = new WeakMap();
+/** @type {WeakSet<import('electron').Session>} */
+const netBoundSessions = new WeakSet();
+/** @type {WeakMap<import('electron').Session, import('electron').BrowserWindow>} */
+const netWinBySession = new WeakMap();
+/** @type {Map<string, number>} */
+const hubChangeDepth = new Map();
+/** @type {WeakMap<import('electron').BrowserWindow, { prev: object | null, labeled: boolean, lastAt: number, timer: NodeJS.Timeout | null }>} */
+const gaugeByWin = new WeakMap();
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function scriptInt(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '0';
+  const text = String(Math.round(value));
+  return /^\d+$/.test(text) ? text : '0';
+}
+
+/**
+ * @param {unknown} value
+ * @returns {number | null}
+ */
+function unitFill(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  if (value < 0) return 0;
+  if (value > 1) return 1;
+  return value;
+}
+
+function freshGaugeState() {
+  return { prev: null, labeled: false, lastAt: 0, timer: null };
+}
+
+/**
+ * @param {import('electron').BrowserWindow} win
+ * @param {number} seq
+ */
+function resetJoinGauges(win, seq) {
+  const prev = gaugeByWin.get(win);
+  if (prev && prev.timer) clearTimeout(prev.timer);
+  gaugeByWin.set(win, freshGaugeState());
+  if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) return;
+  const n = scriptInt(seq);
+  const src = 'if((window.__flcGaugeSeq|0)<' + n + '){window.__flcGaugeSeq=' + n
+    + ';window.__flcGauges&&window.__flcGauges.destroy()}';
+  win.webContents.executeJavaScript(src).catch(() => {});
+}
+
+/**
+ * @param {ReturnType<import('./join-gauges').expectedTotals>} expected
+ * @returns {string}
+ */
+function gaugeLabelScript(expected) {
+  const labels = {
+    files: expected && typeof expected.requests === 'number' ? expected.requests : null,
+    objects: expected && typeof expected.docs === 'number' ? expected.docs : null,
+    modules: expected && typeof expected.packages === 'number' ? expected.packages : null,
+    scene: expected && typeof expected.textures === 'number' ? expected.textures : null,
+  };
+  return 'window.__flcGauges&&window.__flcGauges.setExpectedLabels(' + JSON.stringify(labels) + ')';
+}
+
+/**
+ * @param {object} fills
+ * @returns {string}
+ */
+function gaugeFillScript(fills) {
+  const body = {
+    files: unitFill(fills && fills.files) == null ? 0 : unitFill(fills.files),
+    cache: !fills || fills.cache == null ? null : unitFill(fills.cache),
+    objects: unitFill(fills && fills.objects) == null ? 0 : unitFill(fills.objects),
+    modules: unitFill(fills && fills.modules) == null ? 0 : unitFill(fills.modules),
+    scene: unitFill(fills && fills.scene) == null ? 0 : unitFill(fills.scene),
+  };
+  return 'window.__flcGauges&&window.__flcGauges.setFills(' + JSON.stringify(body) + ')';
+}
+
+/**
+ * @param {import('electron').BrowserWindow} win
+ */
+function pushGaugesNow(win) {
+  if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) return;
+  const state = gaugeByWin.get(win) || freshGaugeState();
+  gaugeByWin.set(win, state);
+  const hubId = hubIdByWin.get(win);
+  let snap = null;
+  try {
+    if (deps.hub && hubId && typeof deps.hub.snapshot === 'function') snap = deps.hub.snapshot(hubId);
+  } catch {
+    snap = null;
+  }
+  if (!snap) return;
+  const serverId = serverIdByWin.get(win) || '';
+  let rows = [];
+  try {
+    if (typeof serverId === 'string' && serverId && deps.joinHistory && typeof deps.joinHistory.list === 'function') {
+      const listed = deps.joinHistory.list(serverId);
+      if (Array.isArray(listed)) rows = listed;
+    }
+  } catch {
+    rows = [];
+  }
+  let expected;
+  try {
+    expected = expectedTotals(rows);
+  } catch {
+    expected = expectedTotals(null);
+  }
+  let fills;
+  try {
+    fills = monotonic(state.prev, computeFills(liveFromSnapshot(snap), expected, Date.now()));
+  } catch {
+    return;
+  }
+  state.prev = fills;
+  state.lastAt = Date.now();
+  // Labels ride with the fills: the first pushes can land before the page
+  // script has installed, so a one-shot label push would be lost.
+  state.labeled = true;
+  win.webContents.executeJavaScript(gaugeLabelScript(expected) + ';' + gaugeFillScript(fills)).catch(() => {});
+}
+
+/**
+ * @param {import('electron').BrowserWindow | null} win
+ */
+function scheduleGauges(win) {
+  if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) return;
+  const state = gaugeByWin.get(win) || freshGaugeState();
+  gaugeByWin.set(win, state);
+  const now = Date.now();
+  const wait = 250 - (now - (state.lastAt || 0));
+  if (state.lastAt && wait > 0) {
+    if (!state.timer) {
+      state.timer = setTimeout(() => {
+        state.timer = null;
+        pushGaugesNow(win);
+      }, wait);
+    }
+    return;
+  }
+  if (state.timer) {
+    clearTimeout(state.timer);
+    state.timer = null;
+  }
+  pushGaugesNow(win);
+}
 
 /**
  * Integration points supplied by main.js so this module stays free of
@@ -70,6 +276,13 @@ const unburyCancelByWin = new WeakMap();
  *   setPromptGlow: ((serverId: string, glow: string) => void) | null,
  *   setPromptGlowStrength: ((serverId: string, strength: number) => void) | null,
  *   forgetPromptAppearance: ((serverId: string) => boolean) | null,
+ *   getDiskCache: (() => { limitBytes: number, mode: string }) | null,
+ *   hub: object | null,
+ *   joinHistory: { forget?: Function, list?: Function } | null,
+ *   appPrefs: { get?: () => { loadingBannerEnabled?: boolean } } | null,
+ *   machineBaseline: { get?: Function } | null,
+ *   getSystemInfo: (() => Promise<object | null>) | null,
+ *   notifyJoinWindow: ((channel: string, payload: object) => void) | null,
  * }}
  */
 const deps = {
@@ -83,6 +296,13 @@ const deps = {
   setPromptGlow: null,
   setPromptGlowStrength: null,
   forgetPromptAppearance: null,
+  getDiskCache: null,
+  hub: null,
+  joinHistory: null,
+  appPrefs: null,
+  machineBaseline: null,
+  getSystemInfo: null,
+  notifyJoinWindow: null,
 };
 
 const GAME_PRELOAD = path.join(__dirname, 'preload-game.js');
@@ -152,9 +372,9 @@ function handleProbeFailure(gameWin, reason, gpuPrefsPath) {
   }
 
   const fallbackReason = reason || 'WebGL context creation failed';
-  logError(
-    `[GPU] WebGL probe failed, falling back to software rendering: ${fallbackReason}`,
-  );
+  logError('[GPU] WebGL probe failed, falling back to software rendering', {
+    reason: classifyWebglReason(fallbackReason),
+  });
 
   writeGpuPrefs(gpuPrefsPath, {
     preferSoftwareWebgl: true,
@@ -211,27 +431,29 @@ function injectCaptureIntoLiveWindows() {
 async function maybeAutologin(win, creds) {
   // Password is optional: Foundry users may have no password set.
   if (!creds || creds.autoJoin === false || !creds.username) {
-    return;
+    return false;
   }
   if (win.isDestroyed()) {
-    return;
+    return false;
   }
   let currentUrl = '';
   try {
     currentUrl = win.webContents.getURL();
   } catch {
-    return;
+    return false;
   }
   if (!isJoinPageUrl(currentUrl)) {
-    return;
+    return false;
   }
   try {
     await win.webContents.executeJavaScript(
       buildAutologinScript({ username: creds.username, password: creds.password }),
     );
     logInfo('[game-window] autologin armed');
+    return true;
   } catch {
     logWarn('[game-window] autologin inject failed');
+    return false;
   }
 }
 
@@ -247,6 +469,8 @@ function installGameMenu(win) {
     promptAutoRaise: promptAutoRaiseByWin.get(win) !== false,
     promptGlow: promptGlowByWin.get(win) || 'blue',
     promptGlowStrength: promptGlowStrengthByWin.get(win),
+    verboseLogging: getLogLevel() === 'debug',
+    platform: process.platform,
     onToggleCenterPrompts: (next) => {
       setWindowCenterPrompts(win, next);
     },
@@ -262,8 +486,73 @@ function installGameMenu(win) {
     onPickPromptGlowStrength: () => {
       choosePromptGlowStrength(win);
     },
+    onFullRefresh: () => {
+      fullRefresh(win).catch((err) => {
+        logWarn('[cache] full refresh failed', {
+          error: err && err.name ? err.name : 'Error',
+        });
+      });
+    },
+    onOpenWorldStats: () => {
+      openStatsFor(win);
+    },
+    onToggleVerboseLogging: (next) => {
+      try {
+        setLogLevel(next ? 'debug' : 'info');
+      } catch (err) {
+        logWarn('[game-window] log level failed', {
+          error: err && err.name ? err.name : 'Error',
+        });
+      }
+      installGameMenu(win);
+    },
+    onOpenLogs: () => {
+      try {
+        const opened = shell.openPath(getLogsDir());
+        if (opened && typeof opened.catch === 'function') opened.catch(() => {});
+      } catch (err) {
+        logWarn('[game-window] open logs failed', {
+          error: err && err.name ? err.name : 'Error',
+        });
+      }
+    },
+    onOpenProblemLog: () => {
+      try {
+        const filePath = path.join(getDataDir(), 'problem-log.jsonl');
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        if (!fs.existsSync(filePath)) {
+          fs.writeFileSync(filePath, '', { encoding: 'utf8', mode: 0o600 });
+        }
+        const opened = shell.openPath(filePath);
+        if (opened && typeof opened.catch === 'function') opened.catch(() => {});
+      } catch (err) {
+        logWarn('[game-window] open problem log failed', {
+          error: err && err.name ? err.name : 'Error',
+        });
+      }
+    },
+    onCopyTroubleshooting: () => {
+      handleStatsCopyReport(serverIdByWin.get(win) || '').catch((err) => {
+        logWarn('[game-window] copy report failed', {
+          error: err && err.name ? err.name : 'Error',
+        });
+      });
+    },
+    onSaveDiagnostics: () => {
+      handleStatsSaveDiagnostics(serverIdByWin.get(win) || '').catch((err) => {
+        logWarn('[game-window] save diagnostics failed', {
+          error: err && err.name ? err.name : 'Error',
+        });
+      });
+    },
   }));
-  win.setMenu(menu);
+  if (!menuCloseBound.has(win)) {
+    menuCloseBound.add(win);
+    win.on('closed', () => {
+      menuPlacement.onClosed(win);
+    });
+  }
+  menuPlacement.installForWindow(win, menu);
 }
 
 /**
@@ -461,6 +750,8 @@ function createLayoutCtx(layoutKey) {
     restoreSeq: -1,
     lastNavUrl: '',
     lastNavAt: 0,
+    seenGameDoc: false,
+    gameDocUrl: '',
     snapshotsSuspended: false,
     pendingEntry: null,
     popouts: new Map(),
@@ -712,6 +1003,27 @@ async function waitForGameReady(win, opts) {
   return { ready: false, popout: false };
 }
 
+/** Reasons the in-page restore script is allowed to put in a log. */
+const LAYOUT_RESTORE_REASONS = new Set([
+  'not_found',
+  'no_sheet',
+  'unknown_kind',
+  'render_failed',
+  'no_popout_module',
+  'exception',
+  'timeout',
+  'unknown',
+]);
+
+/**
+ * @param {unknown} reason
+ * @returns {string}
+ */
+function layoutRestoreReason(reason) {
+  const code = typeof reason === 'string' ? reason : '';
+  return LAYOUT_RESTORE_REASONS.has(code) ? code : 'unknown';
+}
+
 /**
  * Restore the saved screen layout for this session, then close anything that
  * is open but was not part of it. Every step is isolated so one bad window
@@ -769,7 +1081,7 @@ async function restoreSessionLayout(win, ctx) {
         if (result.ok) {
           restored += 1;
         } else {
-          const reason = String(result.reason || 'unknown');
+          const reason = layoutRestoreReason(result.reason);
           logWarn('[game-window] layout: window not restored', { kind: entry.kind, mode: entry.mode, reason });
           if (shouldForgetOnFailure(reason)) {
             layout = removeEntry(layout, entry);
@@ -873,6 +1185,7 @@ function enablePopouts(parent, gameSession, ctx) {
   }));
 
   parent.webContents.on('did-create-window', (child) => {
+    popoutParentByWin.set(child, parent);
     const slot = acquirePopoutSlot(ctx.layoutKey);
     /** @type {{ key: string, desc: object | null, untrack: (() => void) | null, slot: number, boundsApplied: boolean }} */
     const entry = { key: popoutSlotKey(ctx.layoutKey, slot), desc: null, untrack: null, slot, boundsApplied: false };
@@ -991,6 +1304,1036 @@ function resetLivePromptAppearance(serverId) {
 }
 
 /**
+ * @param {import('electron').BrowserWindow | null | undefined} win
+ * @returns {import('electron').Session | null}
+ */
+function sessionForGameWindow(win) {
+  if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) return null;
+  return gameSessionByWin.get(win) || null;
+}
+
+/**
+ * @param {import('electron').Session | null} gameSession
+ * @returns {Promise<number | null>}
+ */
+async function readCacheBytes(gameSession) {
+  if (!gameSession || typeof gameSession.getCacheSize !== 'function') return null;
+  try {
+    const size = await gameSession.getCacheSize();
+    return Number.isFinite(size) ? size : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Clear the HTTP cache, then reload without using it. Cookies and other storage stay.
+ * @param {import('electron').BrowserWindow} win
+ * @returns {Promise<void>}
+ */
+async function fullRefresh(win) {
+  if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) return;
+  const serverId = serverIdByWin.get(win);
+  const gameSession = sessionForGameWindow(win);
+  try {
+    const hubId = win.webContents && hubIdByContents.get(win.webContents);
+    if (hubId) badUrls.clear(hubId);
+  } catch {
+    /* webContents unavailable */
+  }
+  const clearedBytes = await readCacheBytes(gameSession);
+  try {
+    if (gameSession && typeof gameSession.clearCache === 'function') {
+      await gameSession.clearCache();
+    }
+  } catch (err) {
+    logWarn('[cache] full refresh clear failed', {
+      error: err && err.name ? err.name : 'Error',
+    });
+  }
+  logInfo('[cache] full refresh', { server: shortServerHash(serverId), clearedBytes });
+  try {
+    if (!win.isDestroyed()) win.webContents.reloadIgnoringCache();
+  } catch (err) {
+    logWarn('[cache] full refresh reload failed', {
+      error: err && err.name ? err.name : 'Error',
+    });
+  }
+  notifyJoin('servers:cache-changed', {});
+}
+
+/**
+ * @param {import('electron').BrowserWindow | null | undefined} win
+ * @returns {Promise<{ cacheBytes: number | null, limitBytes: number, mode: string }>}
+ */
+async function getCacheInfo(win) {
+  const reported = typeof deps.getDiskCache === 'function' ? deps.getDiskCache() : null;
+  const limitBytes = reported && Number.isFinite(reported.limitBytes) ? reported.limitBytes : 0;
+  const mode = reported && typeof reported.mode === 'string' ? reported.mode : 'auto-fallback';
+  const cacheBytes = await readCacheBytes(sessionForGameWindow(win));
+  return { cacheBytes, limitBytes, mode };
+}
+
+/**
+ * Clear the HTTP cache only. Does not call clearStorageData, so login cookies survive.
+ * @param {import('electron').BrowserWindow | null | undefined} win
+ * @returns {Promise<number | null>} bytes in the cache before the clear, or null
+ */
+async function clearCache(win) {
+  const gameSession = sessionForGameWindow(win);
+  if (!gameSession || typeof gameSession.clearCache !== 'function') return null;
+  const clearedBytes = await readCacheBytes(gameSession);
+  try {
+    await gameSession.clearCache();
+  } catch (err) {
+    logWarn('[cache] clear failed', {
+      error: err && err.name ? err.name : 'Error',
+    });
+    return null;
+  }
+  return clearedBytes;
+}
+
+/**
+ * The game window that owns this call. A future stats window is not a game window
+ * and passes the saved server id instead.
+ * @param {import('electron').IpcMainInvokeEvent} event
+ * @param {unknown} serverId
+ * @returns {import('electron').BrowserWindow | null}
+ */
+function gameWindowForCacheIpc(event, serverId) {
+  let fromSender = null;
+  try {
+    fromSender = BrowserWindow.fromWebContents(event && event.sender);
+  } catch {
+    fromSender = null;
+  }
+  if (fromSender && liveGameWindows.has(fromSender) && !fromSender.isDestroyed()) {
+    return fromSender;
+  }
+  if (typeof serverId !== 'string' || !serverId) return null;
+  const found = gameWindowsById.get(serverId);
+  if (found && !found.isDestroyed()) return found;
+  return null;
+}
+
+/**
+ * @param {string} channel
+ * @param {object} payload
+ */
+function notifyJoin(channel, payload) {
+  if (typeof deps.notifyJoinWindow !== 'function') return;
+  try {
+    deps.notifyJoinWindow(channel, payload);
+  } catch (err) {
+    logWarn('[game-window] join notify failed', {
+      error: err && err.name ? err.name : 'Error',
+    });
+  }
+}
+
+/**
+ * @param {unknown} serverId
+ * @returns {string}
+ */
+function allocateHubId(serverId) {
+  if (typeof serverId === 'string' && serverId) return serverId;
+  return `anon-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * @param {unknown} serverId
+ * @returns {import('electron').BrowserWindow | null}
+ */
+function windowForServer(serverId) {
+  if (typeof serverId !== 'string' || !serverId) return null;
+  const win = gameWindowsById.get(serverId);
+  if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) return null;
+  return win;
+}
+
+/**
+ * @param {object | null | undefined} snap
+ * @returns {string}
+ */
+function titleSuffix(snap) {
+  if (!snap) return '';
+  if (snap.sync && snap.sync.state === 'out-of-sync') return ' — Out of sync';
+  const phases = snap.phases || {};
+  if (phases.ready != null) return '';
+  if (phases.setup != null || phases.canvasReady != null) return ' — loading: setup';
+  const bytes = snap.worldData && snap.worldData.bytes;
+  const hasBytes = typeof bytes === 'number' && Number.isFinite(bytes) && bytes >= 0;
+  if (phases.worldDataReceived != null || (hasBytes && bytes > 0)) {
+    if (hasBytes) return ` — loading: world data ${formatBytes(bytes)}`;
+    return ' — loading: world data';
+  }
+  if (phases.connect != null || phases.gameNavigation != null || phases.domReady != null) return ' — loading';
+  return '';
+}
+
+/**
+ * @param {import('electron').BrowserWindow} win
+ */
+function applyWindowTitle(win) {
+  if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) return;
+  const base = pageTitleByWin.get(win) || 'Game';
+  let suffix = '';
+  const hubId = hubIdByWin.get(win);
+  if (deps.hub && hubId && typeof deps.hub.snapshot === 'function') {
+    try {
+      suffix = titleSuffix(deps.hub.snapshot(hubId));
+    } catch {
+      suffix = '';
+    }
+  }
+  try {
+    win.setTitle(`${base}${suffix}`.slice(0, 240));
+  } catch {
+    /* title update failed */
+  }
+}
+
+/**
+ * @param {boolean} enabled
+ * @param {number} intervalMs
+ * @returns {string}
+ */
+function telemetrySamplingSource(enabled, intervalMs) {
+  if (!enabled) {
+    return 'try{if(window.__flcTelemetry&&typeof window.__flcTelemetry.stop==="function")window.__flcTelemetry.stop()}catch(e){}';
+  }
+  const ms = Math.round(Number(intervalMs));
+  const safe = Number.isFinite(ms) && ms > 0 ? ms : 5000;
+  return `try{if(window.__flcTelemetry&&typeof window.__flcTelemetry.start==="function")window.__flcTelemetry.start(${safe})}catch(e){}`;
+}
+
+/**
+ * @param {import('electron').BrowserWindow} win
+ * @param {boolean} enabled
+ * @param {number} [intervalMs]
+ * @returns {Promise<{ ok: boolean }>}
+ */
+async function setSampling(win, enabled, intervalMs) {
+  if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) return { ok: false };
+  const on = enabled === true;
+  const ms = typeof intervalMs === 'number' && Number.isFinite(intervalMs) && intervalMs > 0
+    ? Math.round(intervalMs)
+    : (intervalByWin.get(win) || 5000);
+  samplingByWin.set(win, on);
+  intervalByWin.set(win, ms);
+  const hubId = hubIdByWin.get(win);
+  if (deps.hub && hubId && typeof deps.hub.setLive === 'function') {
+    deps.hub.setLive(hubId, { sampling: on, intervalMs: ms });
+  }
+  try {
+    await win.webContents.executeJavaScript(telemetrySamplingSource(on, ms));
+  } catch {
+    return { ok: false };
+  }
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Operational monitoring: learn the sync-loss cause from the client's own
+// recent traffic before reaching for an out-of-band probe.
+// ---------------------------------------------------------------------------
+
+const OBSERVED_WINDOW_MS = 30000;
+const OBSERVED_CAP = 100;
+/** Net error names that mean this machine has no usable network path. */
+const LOCAL_LINK_ERRORS = new Set([
+  'ERR_INTERNET_DISCONNECTED',
+  'ERR_NETWORK_CHANGED',
+  'ERR_ADDRESS_UNREACHABLE',
+  'ERR_NETWORK_ACCESS_DENIED',
+  'ERR_PROXY_CONNECTION_FAILED',
+]);
+/** Net error names that mean the server (or its name/TLS) is not answering. */
+const SERVER_SIDE_ERRORS = new Set([
+  'ERR_NAME_NOT_RESOLVED',
+  'ERR_CONNECTION_REFUSED',
+  'ERR_CONNECTION_RESET',
+  'ERR_CONNECTION_CLOSED',
+  'ERR_CONNECTION_TIMED_OUT',
+  'ERR_TIMED_OUT',
+  'ERR_CONNECTION_FAILED',
+  'ERR_EMPTY_RESPONSE',
+  'ERR_SSL_PROTOCOL_ERROR',
+]);
+
+/** Failing files for the Bad URLs panel. In memory only — never log or persist. */
+const badUrls = createBadUrlStore();
+
+/** @type {Map<string, Array<{ at: number, kind: 'error' | 'ok' | '5xx', name: string }>>} */
+const observedByHub = new Map();
+
+/**
+ * Record one observed request outcome (no URL, no body; just kind and error name).
+ * @param {string} hubId
+ * @param {'error' | 'ok' | '5xx'} kind
+ * @param {string} name
+ */
+function noteObserved(hubId, kind, name) {
+  if (!hubId) return;
+  let list = observedByHub.get(hubId);
+  if (!list) {
+    list = [];
+    observedByHub.set(hubId, list);
+  }
+  list.push({ at: Date.now(), kind, name: String(name || '').slice(0, 64) });
+  if (list.length > OBSERVED_CAP) list.splice(0, list.length - OBSERVED_CAP);
+}
+
+/** @param {string} hubId */
+function forgetObserved(hubId) {
+  observedByHub.delete(hubId);
+}
+
+/**
+ * Classify a sync loss from what the client has seen in the last 30 s.
+ * Returns null when there is nothing recent to learn from.
+ * @param {string} hubId
+ * @param {{ reconnects?: number } | null} sync
+ * @param {number} [nowMs]
+ * @returns {'local-offline' | 'server-unreachable' | 'socket-stalled' | null}
+ */
+function classifyObservedCause(hubId, sync, nowMs) {
+  const list = observedByHub.get(hubId) || [];
+  const since = (nowMs || Date.now()) - OBSERVED_WINDOW_MS;
+  let local = 0;
+  let server = 0;
+  let fiveHundred = 0;
+  let ok = 0;
+  let anyError = 0;
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const e = list[i];
+    if (e.at < since) break;
+    if (e.kind === 'ok') ok += 1;
+    else if (e.kind === '5xx') fiveHundred += 1;
+    else {
+      anyError += 1;
+      if (LOCAL_LINK_ERRORS.has(e.name)) local += 1;
+      else if (SERVER_SIDE_ERRORS.has(e.name) || /^ERR_CERT_/.test(e.name)) server += 1;
+    }
+  }
+  if (local > 0 && local >= server) return 'local-offline';
+  if (server > 0 || fiveHundred > 0) return 'server-unreachable';
+  // Requests still succeed and the socket keeps retrying: the socket itself is stuck.
+  if (ok > 0 && (!sync || Number(sync.reconnects) > 0 || anyError === 0)) return 'socket-stalled';
+  return null;
+}
+
+/**
+ * @param {unknown} url
+ * @returns {boolean}
+ */
+function isRecordableUrl(url) {
+  if (typeof url !== 'string' || !url || url.length > 2048) return false;
+  const head = url.slice(0, 8).toLowerCase();
+  return head.startsWith('https://') || head.startsWith('http://');
+}
+
+/**
+ * Join-window "Loading banner" checkbox. The dom-ready handler calls this.
+ * @returns {boolean}
+ */
+function loadingBannerEnabled() {
+  try {
+    if (!deps.appPrefs || typeof deps.appPrefs.get !== 'function') return true;
+    const prefs = deps.appPrefs.get();
+    if (!prefs || !Object.prototype.hasOwnProperty.call(prefs, 'loadingBannerEnabled')) return true;
+    return prefs.loadingBannerEnabled !== false;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * @param {import('electron').Session} gameSession
+ * @param {string} hubId
+ */
+function bindSessionNet(gameSession, hubId, win) {
+  if (gameSession && win) netWinBySession.set(gameSession, win);
+  if (!gameSession || !deps.hub || !hubId || netBoundSessions.has(gameSession)) return;
+  const webRequest = gameSession.webRequest;
+  if (!webRequest || typeof webRequest.onErrorOccurred !== 'function') return;
+  netBoundSessions.add(gameSession);
+  const filter = { urls: ['<all_urls>'] };
+  try {
+    webRequest.onErrorOccurred(filter, (details) => {
+      const raw = details && details.error != null ? String(details.error) : '';
+      const name = raw.replace(/^net::/, '');
+      if (name && deps.hub) deps.hub.netError(hubId, name);
+      if (name) noteObserved(hubId, 'error', name);
+      if (details && shouldRecordFailure({ errorName: name, resourceType: details.resourceType }) && isRecordableUrl(details.url)) {
+        badUrls.note(hubId, {
+          url: details.url,
+          status: null,
+          error: name,
+          resourceType: details.resourceType,
+          referrer: details.referrer || null,
+          at: Date.now(),
+        });
+      }
+    });
+  } catch (err) {
+    logWarn('[game-window] net hook failed', { error: err && err.name ? err.name : 'Error' });
+  }
+  if (typeof webRequest.onCompleted !== 'function') return;
+  try {
+    webRequest.onCompleted(filter, (details) => {
+      if (!details || !deps.hub) return;
+      slowCache.noteCompleted(netWinBySession.get(gameSession) || win, details);
+      if (typeof details.statusCode === 'number' && details.statusCode >= 400) {
+        deps.hub.httpStatus(hubId, details.statusCode);
+        noteObserved(hubId, details.statusCode >= 500 ? '5xx' : 'ok', String(details.statusCode));
+        if (shouldRecordFailure({ statusCode: details.statusCode, resourceType: details.resourceType }) && isRecordableUrl(details.url)) {
+          badUrls.note(hubId, {
+            url: details.url,
+            status: details.statusCode,
+            error: null,
+            resourceType: details.resourceType,
+            referrer: details.referrer || null,
+            at: Date.now(),
+          });
+        }
+      } else {
+        noteObserved(hubId, 'ok', '');
+      }
+      if (details.resourceType !== 'mainFrame' || !details.responseHeaders) return;
+      const headers = details.responseHeaders;
+      const rawDate = headers.date || headers.Date;
+      const text = Array.isArray(rawDate) ? rawDate[0] : rawDate;
+      if (typeof text !== 'string' || !text) return;
+      const serverMs = Date.parse(text);
+      if (!Number.isFinite(serverMs)) return;
+      deps.hub.setClockSkew(hubId, Date.now() - serverMs);
+    });
+  } catch (err) {
+    logWarn('[game-window] net hook failed', { error: err && err.name ? err.name : 'Error' });
+  }
+}
+
+/**
+ * @param {import('electron').BrowserWindow} win
+ * @param {string} hubId
+ */
+function bindCrashHandlers(win, hubId) {
+  win.webContents.on('render-process-gone', (_event, details) => {
+    const reason = details && typeof details.reason === 'string' ? details.reason : 'unknown';
+    if (deps.hub && hubId) deps.hub.rendererGone(hubId, reason);
+    logWarn('[game-window] renderer gone', { reason, exitCode: details && details.exitCode });
+    dialog.showMessageBox(win, {
+      type: 'error',
+      buttons: ['Reload', 'Close'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+      title: 'Foundry Light Client',
+      message: 'The game page crashed.',
+    }).then((result) => {
+      const response = result && result.response;
+      if (!win || win.isDestroyed()) return;
+      if (response === 0) win.webContents.reload();
+      else if (response === 1) win.close();
+    }).catch(() => {});
+  });
+
+  win.webContents.on('unresponsive', () => {
+    if (deps.hub && hubId) deps.hub.unresponsive(hubId);
+    logWarn('[game-window] unresponsive');
+  });
+
+  win.webContents.on('responsive', () => {
+    logInfo('[game-window] responsive');
+  });
+
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _validatedURL, isMainFrame) => {
+    if (!isMainFrame) return;
+    const description = typeof errorDescription === 'string' && errorDescription ? errorDescription : 'ERR_FAILED';
+    if (deps.hub && hubId) deps.hub.netError(hubId, description);
+    logWarn('[game-window] load failed', { code: errorCode });
+  });
+}
+
+/**
+ * @param {ReturnType<typeof createLayoutCtx>} ctx
+ * @param {string} hubId
+ * @param {string} navUrl
+ */
+function noteGameNavigation(ctx, hubId, navUrl) {
+  if (!deps.hub || !hubId || !ctx) return;
+  if (typeof navUrl !== 'string' || !navUrl || isJoinPageUrl(navUrl)) return;
+  let readySeen = false;
+  try {
+    const snap = deps.hub.snapshot(hubId);
+    readySeen = !!(snap && snap.phases && snap.phases.ready != null);
+  } catch {
+    readySeen = false;
+  }
+  const sameAgain = ctx.seenGameDoc === true && navUrl === ctx.gameDocUrl;
+  if (!ctx.seenGameDoc) {
+    ctx.seenGameDoc = true;
+    ctx.gameDocUrl = navUrl;
+    deps.hub.newDocument(hubId);
+    deps.hub.mark(hubId, 'gameNavigation');
+    return;
+  }
+  if (readySeen || sameAgain) {
+    deps.hub.resetLoad(hubId, ctx.loadSeq);
+    deps.hub.mark(hubId, 'connect');
+    deps.hub.mark(hubId, 'gameNavigation');
+    ctx.gameDocUrl = navUrl;
+    return;
+  }
+  ctx.gameDocUrl = navUrl;
+  deps.hub.newDocument(hubId);
+  deps.hub.mark(hubId, 'gameNavigation');
+}
+
+/**
+ * @returns {number | null}
+ */
+function currentSpeedIndex() {
+  if (!deps.machineBaseline || typeof deps.machineBaseline.get !== 'function') return null;
+  try {
+    const row = deps.machineBaseline.get();
+    const n = row && row.speedIndex;
+    return typeof n === 'number' && Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * App and cache counters for an open statistics window. Does not touch the page.
+ * @param {import('electron').BrowserWindow} win
+ * @param {string} hubId
+ * @returns {Promise<object | null>}
+ */
+async function sampleResources(win, hubId) {
+  let metrics = null;
+  try {
+    let pid;
+    try {
+      pid = win.webContents.getOSProcessId();
+    } catch {
+      pid = undefined;
+    }
+    metrics = summarizeAppMetrics(app.getAppMetrics(), { rendererPid: pid, gpu: true });
+  } catch {
+    metrics = null;
+  }
+  let mem = null;
+  try {
+    if (typeof process.getSystemMemoryInfo === 'function') mem = process.getSystemMemoryInfo();
+  } catch {
+    mem = null;
+  }
+  let loadAvg = null;
+  if (process.platform !== 'win32') {
+    try {
+      const loads = os.loadavg();
+      loadAvg = Array.isArray(loads) && Number.isFinite(loads[0]) ? loads[0] : null;
+    } catch {
+      loadAvg = null;
+    }
+  }
+  let cache = { cacheBytes: null, limitBytes: null };
+  try {
+    cache = await getCacheInfo(win);
+  } catch {
+    cache = { cacheBytes: null, limitBytes: null };
+  }
+  if (deps.hub && hubId && typeof deps.hub.resourcesUpdate === 'function') {
+    deps.hub.resourcesUpdate(hubId, {
+      rendererCpuPercent: metrics && metrics.renderer ? metrics.renderer.cpuPercent : null,
+      rendererMemoryBytes: metrics && metrics.renderer ? metrics.renderer.memoryBytes : null,
+      gpuCpuPercent: metrics && metrics.gpu ? metrics.gpu.cpuPercent : null,
+      gpuMemoryBytes: metrics && metrics.gpu ? metrics.gpu.memoryBytes : null,
+      systemTotalBytes: mem && Number.isFinite(mem.total) ? mem.total * 1024 : null,
+      // Prefer "available" (Linux MemAvailable); "free" ignores reclaimable cache.
+      systemFreeBytes: readMemAvailableBytes() ?? (mem && Number.isFinite(mem.free) ? mem.free * 1024 : null),
+      loadAvg1: loadAvg,
+      cacheBytes: cache.cacheBytes,
+      cacheLimitBytes: Number.isFinite(cache.limitBytes) ? cache.limitBytes : null,
+    }, false);
+  }
+  return metrics;
+}
+
+/**
+ * @param {number} n
+ * @returns {string}
+ */
+function readLogTail(n) {
+  try {
+    const stat = fs.statSync(MAIN_LOG_PATH);
+    const size = stat.size;
+    if (!Number.isFinite(size) || size <= 0) return '';
+    const take = Math.min(size, 256 * 1024);
+    const buf = Buffer.alloc(take);
+    const fd = fs.openSync(MAIN_LOG_PATH, 'r');
+    try {
+      fs.readSync(fd, buf, 0, take, size - take);
+    } finally {
+      fs.closeSync(fd);
+    }
+    return tailLines(buf.toString('utf8'), n);
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * @param {import('electron').BrowserWindow} win
+ * @param {{ metrics?: boolean }} [opts]
+ */
+async function assembleStats(win, opts) {
+  const hubId = hubIdByWin.get(win);
+  if (!deps.hub || !hubId || typeof deps.hub.payload !== 'function') return null;
+  const wantMetrics = !!(opts && opts.metrics);
+  let systemInfo = null;
+  if (typeof deps.getSystemInfo === 'function') {
+    try {
+      systemInfo = await deps.getSystemInfo();
+    } catch {
+      systemInfo = null;
+    }
+  }
+  let appMetrics = null;
+  if (wantMetrics) appMetrics = await sampleResources(win, hubId);
+  let base = null;
+  try {
+    base = deps.hub.payload(hubId, {
+      systemInfo,
+      speedIndex: currentSpeedIndex(),
+      sampling: samplingByWin.get(win) === true,
+      intervalMs: intervalByWin.get(win) || 5000,
+    });
+  } catch {
+    base = null;
+  }
+  if (!base) return null;
+  const cache = await getCacheInfo(win);
+  let system = null;
+  if (systemInfo && typeof systemInfo === 'object') {
+    system = Object.assign({}, systemInfo);
+    if (appMetrics) system.appMetrics = appMetrics;
+  }
+  return Object.assign({}, base, {
+    cache,
+    system,
+    badUrlCount: hubId ? badUrls.count(hubId) : 0,
+  });
+}
+
+/**
+ * @param {import('electron').BrowserWindow} win
+ * @param {string} hubId
+ */
+function schedulePush(win, hubId) {
+  if (!hubId || !getStatsWindowFor(win)) return;
+  const prev = pushChainByWin.get(win) || Promise.resolve();
+  const next = prev.then(() => deliverStats(win, hubId), () => deliverStats(win, hubId));
+  pushChainByWin.set(win, next);
+}
+
+/**
+ * @param {import('electron').BrowserWindow} win
+ * @param {string} hubId
+ */
+async function deliverStats(win, hubId) {
+  if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) return;
+  if (!getStatsWindowFor(win)) return;
+  const payload = await assembleStats(win, { metrics: samplingByWin.get(win) === true });
+  if (!payload || !getStatsWindowFor(win)) return;
+  pushUpdate(win, payload);
+}
+
+/**
+ * @param {import('electron').BrowserWindow} win
+ * @param {string} hubId
+ */
+async function probeServer(win, hubId) {
+  let origin = '';
+  try {
+    origin = new URL(win.webContents.getURL()).origin;
+  } catch {
+    if (deps.hub && hubId) deps.hub.setSyncCause(hubId, 'server-unreachable');
+    return;
+  }
+  if (!origin || typeof net.fetch !== 'function') {
+    if (deps.hub && hubId) deps.hub.setSyncCause(hubId, 'server-unreachable');
+    return;
+  }
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 5000);
+  try {
+    await net.fetch(origin, { method: 'HEAD', signal: ctrl.signal });
+    if (deps.hub && hubId) deps.hub.setSyncCause(hubId, 'socket-stalled');
+  } catch {
+    if (deps.hub && hubId) deps.hub.setSyncCause(hubId, 'server-unreachable');
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * @param {import('electron').BrowserWindow} win
+ * @param {string} hubId
+ */
+function considerSync(win, hubId) {
+  if (!deps.hub || !hubId || typeof deps.hub.snapshot !== 'function') return;
+  const snap = deps.hub.snapshot(hubId);
+  if (!snap || !snap.sync) return;
+  if (snap.sync.state !== 'out-of-sync') {
+    if (snap.sync.cause) deps.hub.setSyncCause(hubId, null);
+    return;
+  }
+  if (snap.sync.cause) return;
+  let online = true;
+  try {
+    if (typeof net.isOnline === 'function') online = net.isOnline();
+  } catch {
+    online = true;
+  }
+  if (online === false) {
+    deps.hub.setSyncCause(hubId, 'local-offline');
+    return;
+  }
+  // Prefer what the client itself observed over an out-of-band probe.
+  const observed = classifyObservedCause(hubId, snap.sync);
+  if (observed) {
+    deps.hub.setSyncCause(hubId, observed);
+    return;
+  }
+  // Nothing recent to learn from: one rate-limited probe as a last resort.
+  if (probeFlightByWin.get(win)) return;
+  const nowMs = Date.now();
+  const prev = probeAtByWin.get(win) || 0;
+  if (nowMs - prev < 30000) return;
+  probeAtByWin.set(win, nowMs);
+  probeFlightByWin.set(win, true);
+  probeServer(win, hubId).finally(() => {
+    probeFlightByWin.set(win, false);
+  });
+}
+
+/**
+ * @param {import('electron').BrowserWindow} win
+ * @param {string} hubId
+ */
+function onHubChange(win, hubId) {
+  const depth = hubChangeDepth.get(hubId) || 0;
+  if (depth > 0) return;
+  hubChangeDepth.set(hubId, 1);
+  try {
+    considerSync(win, hubId);
+    applyWindowTitle(win);
+  } finally {
+    hubChangeDepth.set(hubId, 0);
+  }
+  schedulePush(win, hubId);
+}
+
+/**
+ * @param {import('electron').BrowserWindow} win
+ */
+function openStatsFor(win) {
+  if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) return null;
+  const serverId = serverIdByWin.get(win) || '';
+  const hubId = hubIdByWin.get(win);
+  return openWorldStatsWindow(win, {
+    serverId,
+    label: labelByWin.get(win) || 'Game',
+    incognito: incognitoByWin.get(win) === true,
+    windowState: deps.windowState,
+    layoutKey: layoutKeyByWin.get(win) || 'game',
+    onSampling(enabled, intervalMs) {
+      setSampling(win, enabled, intervalMs).catch(() => {});
+    },
+    onReady() {
+      if (hubId) schedulePush(win, hubId);
+    },
+  });
+}
+
+/**
+ * @param {string} serverId
+ * @returns {Promise<number | null>}
+ */
+async function clearServerHttpCache(serverId) {
+  if (typeof serverId !== 'string' || !serverId) return null;
+  const live = gameWindowsById.get(serverId);
+  let gameSession = null;
+  if (live && !(typeof live.isDestroyed === 'function' && live.isDestroyed())) {
+    gameSession = sessionForGameWindow(live);
+  }
+  if (!gameSession) {
+    try {
+      gameSession = session.fromPartition(`persist:game-${serverId}`);
+    } catch {
+      return null;
+    }
+  }
+  const clearedBytes = await readCacheBytes(gameSession);
+  try {
+    if (gameSession && typeof gameSession.clearCache === 'function') await gameSession.clearCache();
+  } catch (err) {
+    logWarn('[cache] clear failed', { error: err && err.name ? err.name : 'Error' });
+    return null;
+  }
+  return clearedBytes;
+}
+
+/**
+ * @param {import('electron').WebContents} sender
+ */
+function handleStatsGetContext(sender) {
+  return getStatsContext(sender);
+}
+
+/**
+ * @param {unknown} serverId
+ */
+async function handleStatsGetSnapshot(serverId) {
+  const win = windowForServer(serverId);
+  if (!win) return null;
+  return assembleStats(win, { metrics: true });
+}
+
+/**
+ * @param {unknown} serverId
+ * @param {boolean} enabled
+ * @param {number} [intervalMs]
+ */
+function handleStatsSetSampling(serverId, enabled, intervalMs) {
+  const win = windowForServer(serverId);
+  if (!win) return Promise.resolve({ ok: false });
+  return setSampling(win, enabled === true, intervalMs);
+}
+
+/**
+ * @param {unknown} serverId
+ * @returns {Promise<{ ok: boolean, bytes: number }>}
+ */
+async function handleStatsCopyReport(serverId, opts) {
+  const win = windowForServer(serverId);
+  if (!win) return { ok: false, bytes: 0 };
+  try {
+    const payload = await assembleStats(win, { metrics: true });
+    if (!payload) return { ok: false, bytes: 0 };
+    let netTrace = null;
+    try {
+      netTrace = await redactedNetTraceText(serverId, {
+        includeAddresses: Boolean(opts && opts.includeAddresses),
+      });
+    } catch (err) {
+      logWarn('[nettrace] report skipped', { error: err && err.name ? err.name : 'Error' });
+    }
+    const report = buildTroubleshootingReport({
+      snapshot: payload.snapshot,
+      systemInfo: payload.system,
+      findings: payload.findings,
+      history: payload.history,
+      netTrace,
+      slowCache: slowCache.verdictFor(serverId),
+    });
+    return copyDiagnosticsText({ clipboard }, report);
+  } catch (err) {
+    logWarn('[game-window] copy report failed', { error: err && err.name ? err.name : 'Error' });
+    return { ok: false, bytes: 0 };
+  }
+}
+
+/**
+ * @param {unknown} serverId
+ */
+async function handleStatsSaveDiagnostics(serverId) {
+  const win = windowForServer(serverId);
+  if (!win) return { ok: false, error: 'Error' };
+  try {
+    const payload = await assembleStats(win, { metrics: true });
+    if (!payload) return { ok: false, error: 'Error' };
+    const report = buildTroubleshootingReport({
+      snapshot: payload.snapshot,
+      systemInfo: payload.system,
+      findings: payload.findings,
+      history: payload.history,
+      slowCache: slowCache.verdictFor(serverId),
+    });
+    const text = buildDiagnosticsText({ report, logTail: readLogTail(200) });
+    let defaultPath = diagnosticsFileName(new Date());
+    try {
+      defaultPath = path.join(app.getPath('documents'), diagnosticsFileName(new Date()));
+    } catch {
+      defaultPath = diagnosticsFileName(new Date());
+    }
+    return saveDiagnosticsText({
+      dialog: { showSaveDialog: (dialogOpts) => dialog.showSaveDialog(win, dialogOpts) },
+      fs,
+    }, text, { defaultPath });
+  } catch (err) {
+    logWarn('[game-window] save diagnostics failed', { error: err && err.name ? err.name : 'Error' });
+    return { ok: false, error: err && err.name ? err.name : 'Error' };
+  }
+}
+
+/**
+ * @param {unknown} serverId
+ */
+async function handleStatsFullRefresh(serverId) {
+  const win = windowForServer(serverId);
+  if (!win) return { ok: false };
+  forgetNetTrace(serverId);
+  try {
+    await fullRefresh(win);
+    return { ok: true };
+  } catch (err) {
+    logWarn('[cache] full refresh failed', { error: err && err.name ? err.name : 'Error' });
+    return { ok: false };
+  }
+}
+
+/**
+ * @param {object | null} refMap
+ * @param {unknown} url
+ * @returns {string[]}
+ */
+function refsFromLookup(refMap, url) {
+  const key = failurePathname(url);
+  if (!refMap || typeof refMap !== 'object' || !key) return [];
+  if (!Object.prototype.hasOwnProperty.call(refMap, key)) return [];
+  const found = refMap[key];
+  if (!Array.isArray(found)) return [];
+  const refs = [];
+  for (let i = 0; i < found.length && refs.length < 5; i += 1) {
+    const text = found[i];
+    if (typeof text === 'string' && text && text.length <= 2048) refs.push(text);
+  }
+  return refs;
+}
+
+/**
+ * Failing files plus in-world references. URLs and names stay in this return
+ * value for the statistics window; they are not logged.
+ * @param {unknown} serverId
+ */
+async function handleStatsBadUrls(serverId) {
+  const win = windowForServer(serverId);
+  if (!win) return { entries: [], count: 0 };
+  const hubId = hubIdByWin.get(win);
+  if (!hubId) return { entries: [], count: 0 };
+  const listed = badUrls.list(hubId);
+  const label = labelByWin.get(win) || 'Game';
+  let foundryVersion = null;
+  let systemId = null;
+  let systemVersion = null;
+  try {
+    const snap = deps.hub && typeof deps.hub.snapshot === 'function' ? deps.hub.snapshot(hubId) : null;
+    const world = snap && snap.world;
+    if (world && typeof world === 'object') {
+      if (typeof world.foundryVersion === 'string' && world.foundryVersion) foundryVersion = world.foundryVersion;
+      const system = world.system;
+      if (system && typeof system === 'object') {
+        if (typeof system.id === 'string' && system.id) systemId = system.id;
+        if (typeof system.version === 'string' && system.version) systemVersion = system.version;
+      }
+    }
+  } catch {
+    foundryVersion = null;
+    systemId = null;
+    systemVersion = null;
+  }
+  const paths = [];
+  for (let i = 0; i < listed.length && paths.length < 200; i += 1) {
+    const url = listed[i] && listed[i].url;
+    if (typeof url === 'string' && url.length <= 2048) paths.push(url);
+  }
+  let refMap = null;
+  if (paths.length) {
+    try {
+      if (typeof win.isDestroyed === 'function' && win.isDestroyed()) return { entries: [], count: 0 };
+      const raw = await win.webContents.executeJavaScript(buildReferenceLookupScript(paths), true);
+      if (raw && typeof raw === 'object') refMap = raw;
+    } catch (err) {
+      logWarn('[game-window] bad url lookup failed', {
+        error: err && err.name ? err.name : 'Error',
+      });
+      refMap = null;
+    }
+  }
+  if (!windowForServer(serverId)) return { entries: [], count: 0 };
+  const entries = listed.map((row) => ({
+    url: row.url,
+    status: row.status,
+    error: row.error,
+    resourceType: row.resourceType,
+    referrer: row.referrer,
+    at: row.at,
+    lastAt: row.lastAt,
+    hits: row.hits,
+    refs: refsFromLookup(refMap, row.url),
+  }));
+  return {
+    entries,
+    count: entries.length,
+    dropped: badUrls.dropped(hubId),
+    label,
+    foundryVersion,
+    systemId,
+    systemVersion,
+  };
+}
+
+/**
+ * @param {unknown} serverId
+ * @returns {Promise<{ ok: boolean, count: number }>}
+ */
+async function handleStatsCopyBadUrls(serverId) {
+  try {
+    const data = await handleStatsBadUrls(serverId);
+    const text = formatBadUrlsText({
+      label: data && data.label,
+      generatedAt: new Date(),
+      foundryVersion: data && data.foundryVersion,
+      systemId: data && data.systemId,
+      systemVersion: data && data.systemVersion,
+      entries: data && data.entries,
+      dropped: data && data.dropped,
+    });
+    clipboard.writeText(text);
+    const count = data && typeof data.count === 'number' && Number.isFinite(data.count) ? data.count : 0;
+    return { ok: true, count };
+  } catch (err) {
+    logWarn('[game-window] copy bad urls failed', {
+      error: err && err.name ? err.name : 'Error',
+    });
+    return { ok: false, count: 0 };
+  }
+}
+
+function noteGpuProcessGone() {
+  if (!deps.hub || typeof deps.hub.setClient !== 'function') return;
+  for (const win of liveGameWindows) {
+    const id = hubIdByWin.get(win);
+    if (id) deps.hub.setClient(id, { gpuGone: true });
+  }
+}
+
+/**
+ * @param {import('electron').WebContents} webContents
+ * @param {string} error
+ */
+function noteCertificateError(webContents, error) {
+  const id = webContents ? hubIdByContents.get(webContents) : null;
+  if (!id || !deps.hub || typeof deps.hub.netError !== 'function') return;
+  deps.hub.netError(id, typeof error === 'string' && error ? error : 'ERR_CERT');
+}
+
+/**
  * @param {{ id?: string, url: string, label?: string, incognito?: boolean, autoJoin?: boolean, username?: string, password?: string, centerPrompts?: boolean, promptHighlight?: boolean, promptAutoRaise?: boolean, promptGlow?: string, promptGlowStrength?: number }} payload
  * @param {string} gpuPrefsPath
  * @returns {Promise<void>}
@@ -1013,19 +2356,17 @@ function openGameWindow(payload, gpuPrefsPath) {
   }
 
   const loadUrl = normalizeGameUrl(url);
-  const redactedUrl = redactForLog(loadUrl);
-  let hostDisplay = redactedUrl;
-  try {
-    hostDisplay = new URL(String(redactedUrl)).host;
-  } catch {
-    // keep redacted URL string
-  }
-  logInfo(`Connecting to server "${sanitizeTitle(label)}" (${hostDisplay})`);
+  logInfo('connecting', { server: shortServerHash(id), incognito: Boolean(incognito) });
 
   const partition = incognito
     ? `incog-${Date.now()}-${Math.random().toString(36).slice(2)}`
     : `persist:game-${id}`;
   const gameSession = session.fromPartition(partition);
+  try {
+    attachMediaProtocol(gameSession.protocol);
+  } catch (err) {
+    logWarn('[game-window] media protocol failed', { error: err && err.name ? err.name : 'Error' });
+  }
 
   // Window layout is remembered per session (per saved server), so each
   // server can have its own game-window and popout arrangement. A server that
@@ -1048,9 +2389,13 @@ function openGameWindow(payload, gpuPrefsPath) {
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: false,
+      // Keep Foundry's timers and sockets running when this window is unfocused or minimized.
+      backgroundThrottling: false,
+      autoplayPolicy: 'no-user-gesture-required',
       preload: GAME_PRELOAD,
     },
   });
+  gameSessionByWin.set(win, gameSession);
   if (bounds.maximized) {
     win.maximize();
   }
@@ -1061,12 +2406,26 @@ function openGameWindow(payload, gpuPrefsPath) {
   }
 
   const windowTitle = sanitizeTitle(label);
-  logInfo(`Game window opened: "${windowTitle}" (id=${id || 'anonymous'})`);
+  const hubId = allocateHubId(id);
+  logInfo('game window opened', { server: shortServerHash(id) });
   liveGameWindows.add(win);
+  hubIdByWin.set(win, hubId);
+  hubIdByContents.set(win.webContents, hubId);
+  labelByWin.set(win, windowTitle);
+  incognitoByWin.set(win, Boolean(incognito));
+  layoutKeyByWin.set(win, layoutKey);
+  pageTitleByWin.set(win, windowTitle);
   autologinContextByWebContents.set(win.webContents, {
     username: String(creds.username || ''),
     label: windowTitle,
   });
+  if (deps.hub && typeof deps.hub.attach === 'function') {
+    deps.hub.attach(hubId, { serverId: typeof id === 'string' ? id : '', label: windowTitle });
+    if (typeof deps.hub.onChange === 'function') deps.hub.onChange(hubId, () => onHubChange(win, hubId));
+    deps.hub.mark(hubId, 'connect');
+    bindSessionNet(gameSession, hubId, win);
+  }
+  bindCrashHandlers(win, hubId);
 
   const ctx = createLayoutCtx(layoutKey);
   ctx.homeBounds = Number.isFinite(bounds.x) && Number.isFinite(bounds.y)
@@ -1097,13 +2456,21 @@ function openGameWindow(payload, gpuPrefsPath) {
   });
 
   win.on('closed', () => {
-    logInfo(`Game window closed: "${windowTitle}" (id=${id || 'anonymous'})`);
+    logInfo('game window closed', { server: shortServerHash(id) });
+    closeStatsWindowFor(win);
+    slowCache.onClosed(win);
+    if (id) forgetNetTrace(id);
+    forgetObserved(hubId);
+    badUrls.forget(hubId);
+    if (deps.hub && typeof deps.hub.detach === 'function') deps.hub.detach(hubId);
+    hubChangeDepth.delete(hubId);
     stopSnapshotLoop(ctx);
     liveGameWindows.delete(win);
     if (id && gameWindowsById.get(id) === win) {
       gameWindowsById.delete(id);
     }
     if (layoutCtxByKey.get(layoutKey) === ctx) layoutCtxByKey.delete(layoutKey);
+    notifyJoin('servers:cache-changed', {});
   });
 
   if (id) {
@@ -1111,6 +2478,7 @@ function openGameWindow(payload, gpuPrefsPath) {
   }
 
   serverIdByWin.set(win, id || '');
+  slowCache.watch(win, id || '');
   centerPromptsByWin.set(win, centerPromptsEnabled(payload.centerPrompts));
   promptHighlightByWin.set(win, promptHighlightEnabled(payload.promptHighlight));
   promptAutoRaiseByWin.set(win, promptAutoRaiseEnabled(payload.promptAutoRaise));
@@ -1137,9 +2505,17 @@ function openGameWindow(payload, gpuPrefsPath) {
     ctx.lastNavAt = now;
     stopSnapshotLoop(ctx);
     ctx.loadSeq += 1;
+    resetJoinGauges(win, ctx.loadSeq);
+    try {
+      win.webContents.executeJavaScript(
+        'try{window.__flcLoadingVideo&&window.__flcLoadingVideo.destroy()}catch(e){}'
+      ).catch(() => {});
+    } catch { /* window may already be closing */ }
     ctx.restoring = false;
     ctx.restoreDone = false;
     ctx.lastSaved = '';
+    noteGameNavigation(ctx, hubId, url);
+    slowCache.onNavigation(win, typeof url === 'string' && /^https?:\/\//i.test(url) && !isJoinPageUrl(url));
   });
 
   const prefsAtOpen = readGpuPrefs(gpuPrefsPath);
@@ -1149,8 +2525,19 @@ function openGameWindow(payload, gpuPrefsPath) {
     try {
       result = await win.webContents.executeJavaScript(WEBGL_PROBE_SCRIPT);
     } catch (err) {
-      logWarn('[game-window] WebGL probe execution failed:', err.message);
-      result = { ok: false, reason: err.message };
+      logWarn('[game-window] WebGL probe execution failed', {
+        name: err && err.name ? err.name : 'Error',
+      });
+      result = { ok: false, reason: err && err.message ? err.message : 'WebGL probe failed' };
+    }
+
+    if (deps.hub && hubId && typeof deps.hub.setClient === 'function') {
+      deps.hub.setClient(hubId, {
+        webglMode: prefsAtOpen.preferSoftwareWebgl ? 'software' : 'hardware',
+        webglFallbackReason: prefsAtOpen.lastFallbackReason
+          ? (classifyWebglReason(prefsAtOpen.lastFallbackReason) || null)
+          : null,
+      });
     }
 
     if (result && result.ok === false && !prefsAtOpen.preferSoftwareWebgl) {
@@ -1158,10 +2545,106 @@ function openGameWindow(payload, gpuPrefsPath) {
       return;
     }
 
-    await maybeAutologin(win, creds);
+    let pageUrl = '';
+    try {
+      pageUrl = win.webContents.getURL();
+    } catch {
+      pageUrl = '';
+    }
+    if (deps.hub && hubId && isJoinPageUrl(pageUrl)) deps.hub.mark(hubId, 'joinPageLoaded');
+    const injected = await maybeAutologin(win, creds);
+    if (injected && deps.hub && hubId) deps.hub.mark(hubId, 'autologinArmed');
     await applyCenterPrompts(win);
     await injectCapture(win);
     restoreSessionLayout(win, ctx).catch(() => {});
+  });
+  win.webContents.on('dom-ready', () => {
+    slowCache.onDomReady(win);
+    win.webContents.executeJavaScript(buildTelemetryScript()).then(() => {
+      if (samplingByWin.get(win) === true && !win.isDestroyed()) {
+        return setSampling(win, true, intervalByWin.get(win) || 5000);
+      }
+      return null;
+    }).catch(() => {});
+
+    // Plain decimal only, so the page call cannot carry anything but numbers.
+    const bannerOn = typeof loadingBannerEnabled === 'function' ? loadingBannerEnabled() : true;
+    let pushVideoJoin = function pushVideoJoin() {};
+    const finiteScriptArg = (value) => {
+      if (typeof value !== 'number' || !Number.isFinite(value)) return '0';
+      const text = String(Math.round(value));
+      return /^\d+$/.test(text) ? text : '0';
+    };
+
+    win.webContents.executeJavaScript(buildLoadingDetailsScript()).then(() => {
+      try {
+        if (!win || win.isDestroyed()) return null;
+        const clockHubId = hubIdByWin.get(win);
+        const serverId = serverIdByWin.get(win) || '';
+        let elapsedMs = 0;
+        let typicalMs = 0;
+        let joins = 0;
+        try {
+          if (deps.hub && clockHubId && typeof deps.hub.snapshot === 'function') {
+            const snap = deps.hub.snapshot(clockHubId);
+            const startedAt = snap && snap.startedAt;
+            if (typeof startedAt === 'number' && Number.isFinite(startedAt) && startedAt > 0) {
+              const delta = Date.now() - startedAt;
+              if (Number.isFinite(delta) && delta >= 0) elapsedMs = delta;
+            }
+          }
+        } catch {
+          elapsedMs = 0;
+        }
+        try {
+          if (typeof serverId === 'string' && serverId && deps.joinHistory && typeof deps.joinHistory.list === 'function') {
+            const rows = deps.joinHistory.list(serverId);
+            if (Array.isArray(rows)) {
+              joins = rows.length;
+              const totals = [];
+              for (let i = 0; i < rows.length; i += 1) {
+                const total = rows[i] && rows[i].totalMs;
+                if (typeof total === 'number' && Number.isFinite(total) && total >= 0) totals.push(total);
+              }
+              const med = percentile(totals, 50);
+              if (typeof med === 'number' && Number.isFinite(med) && med > 0) typicalMs = med;
+            }
+          }
+        } catch {
+          typicalMs = 0;
+          joins = 0;
+        }
+        const n1 = finiteScriptArg(elapsedMs);
+        const n2 = finiteScriptArg(typicalMs);
+        const n3 = finiteScriptArg(joins);
+        pushVideoJoin = function pushVideoJoin() {
+          if (!bannerOn || !win || win.isDestroyed()) return null;
+          return win.webContents.executeJavaScript(
+            'window.__flcLoadingVideo && window.__flcLoadingVideo.setJoin(' + n1 + ',' + n2 + ')'
+          );
+        };
+        return win.webContents.executeJavaScript(
+          'window.__flcLoadingDetails && window.__flcLoadingDetails.setJoin(' + n1 + ',' + n2 + ',' + n3 + ')'
+        ).then(() => pushVideoJoin());
+      } catch {
+        return null;
+      }
+    }).catch(() => {});
+    win.webContents.executeJavaScript(
+      buildGaugesScript() + ';try{window.__flcGaugeSeq=' + scriptInt(ctx.loadSeq) + ';}catch(e){}'
+    ).catch(() => {});
+    if (bannerOn) {
+      win.webContents.executeJavaScript(buildLoadingVideoScript()).then(() => {
+        try { pushVideoJoin(); } catch { /* ignore */ }
+      }).catch(() => {});
+    }
+  });
+  win.webContents.on('page-title-updated', (event, title) => {
+    event.preventDefault();
+    if (typeof title === 'string' && title.trim()) {
+      pageTitleByWin.set(win, title.trim().slice(0, 200));
+    }
+    applyWindowTitle(win);
   });
   win.webContents.on('did-navigate-in-page', () => {
     injectCapture(win);
@@ -1246,9 +2729,78 @@ function registerGameIpc(gpuPrefsPath, integration) {
 
   ipcMain.handle('game:connect', (_event, payload) => openGameWindow(payload, gpuPrefsPath));
 
-  ipcMain.handle('game:forget-layout', (_event, serverId) => ({
-    removed: forgetSessionLayout(String(serverId || '')),
-  }));
+  ipcMain.handle('game:cache-info', (event, serverId) => getCacheInfo(gameWindowForCacheIpc(event, serverId)));
+
+  ipcMain.handle('game:clear-cache', async (event, serverId) => {
+    const bytes = await clearCache(gameWindowForCacheIpc(event, serverId));
+    notifyJoin('servers:cache-changed', {});
+    return bytes;
+  });
+
+  ipcMain.handle('game:forget-layout', async (_event, serverId) => {
+    const id = String(serverId || '');
+    const removed = forgetSessionLayout(id);
+    const clearedBytes = await clearServerHttpCache(id);
+    if (deps.joinHistory && id && typeof deps.joinHistory.forget === 'function') {
+      try {
+        deps.joinHistory.forget(id);
+      } catch (err) {
+        logWarn('[game-window] history forget failed', {
+          error: err && err.name ? err.name : 'Error',
+        });
+      }
+    }
+    notifyJoin('servers:cache-changed', {});
+    return { removed, clearedBytes };
+  });
+
+  // Preload asks for the probe source synchronously so it can run before page scripts.
+  ipcMain.on('foundry:telemetry-script', (event) => {
+    event.returnValue = hubIdByContents.has(event.sender) ? buildTelemetryScript() : '';
+  });
+
+  ipcMain.on('foundry:telemetry', (event, payload) => {
+    const hubId = hubIdByContents.get(event.sender);
+    if (!hubId || !deps.hub || typeof deps.hub.ingest !== 'function') return;
+    deps.hub.ingest(hubId, payload);
+    const kind = payload && typeof payload.type === 'string' ? payload.type : '';
+    if (kind !== 'progress' && kind !== 'phase') return;
+    let win = null;
+    try {
+      win = BrowserWindow.fromWebContents(event.sender);
+    } catch {
+      win = null;
+    }
+    if (!win || !liveGameWindows.has(win)) return;
+    if (kind === 'phase' && payload.name === 'ready') {
+      slowCache.onReady(win);
+      // Final fill so the row reads 100%, then take it down with the overlay.
+      pushGaugesNow(win);
+      setTimeout(() => {
+        if (win.isDestroyed()) return;
+        win.webContents.executeJavaScript('window.__flcGauges&&window.__flcGauges.destroy()').catch(() => {});
+      }, 1500);
+      return;
+    }
+    scheduleGauges(win);
+  });
+
+  ipcMain.on('foundry:open-stats', (event) => {
+    let win = null;
+    try {
+      win = BrowserWindow.fromWebContents(event.sender);
+    } catch {
+      win = null;
+    }
+    if (win && liveGameWindows.has(win)) openStatsFor(win);
+  });
+
+  ipcMain.on('foundry:autologin-status', (event, status) => {
+    if (!status || status.submitted !== true) return;
+    const hubId = hubIdByContents.get(event.sender);
+    if (!hubId || !deps.hub || typeof deps.hub.mark !== 'function') return;
+    deps.hub.mark(hubId, 'autologinSubmitted');
+  });
 
   // Final snapshot sent by the page on pagehide (reload, disconnect, close).
   ipcMain.on('foundry:layout-snapshot', (event, raw) => {
@@ -1290,6 +2842,52 @@ function registerGameIpc(gpuPrefsPath, integration) {
   });
 }
 
+/**
+ * @param {import('electron').BrowserWindow | null | undefined} win
+ * @returns {boolean}
+ */
+function isGameWindow(win) {
+  return Boolean(win) && liveGameWindows.has(win);
+}
+
+/**
+ * Parent recorded for a popout, including one whose game window is already gone.
+ * @param {import('electron').BrowserWindow | null | undefined} win
+ * @returns {import('electron').BrowserWindow | null}
+ */
+function popoutParentOf(win) {
+  if (!win) return null;
+  if (popoutParentByWin.has(win)) return popoutParentByWin.get(win) || null;
+  for (const parent of liveGameWindows) {
+    const contents = parent && parent.webContents;
+    const ctx = contents && layoutCtxByWebContents.get(contents);
+    if (ctx && ctx.popouts && ctx.popouts.has(win)) return parent;
+  }
+  return null;
+}
+
+/**
+ * @param {import('electron').BrowserWindow | null | undefined} win
+ * @returns {boolean}
+ */
+function isPopoutWindow(win) {
+  if (!win) return false;
+  if (popoutParentByWin.has(win)) return true;
+  return popoutParentOf(win) != null;
+}
+
+/**
+ * Live game window that owns this popout, or null when it is not a popout
+ * or the parent can no longer be used.
+ * @param {import('electron').BrowserWindow | null | undefined} win
+ * @returns {import('electron').BrowserWindow | null}
+ */
+function gameWindowForPopout(win) {
+  const parent = popoutParentOf(win);
+  if (parent && isGameWindow(parent)) return parent;
+  return null;
+}
+
 module.exports = {
   openGameWindow,
   registerGameIpc,
@@ -1299,4 +2897,23 @@ module.exports = {
   runInLiveGameWindows,
   hasLiveGameWindows,
   getAutologinContext,
+  fullRefresh,
+  getCacheInfo,
+  clearCache,
+  handleStatsGetContext,
+  handleStatsGetSnapshot,
+  handleStatsSetSampling,
+  handleStatsCopyReport,
+  handleStatsSaveDiagnostics,
+  handleStatsFullRefresh,
+  handleStatsBadUrls,
+  handleStatsCopyBadUrls,
+  windowForServer,
+  noteGpuProcessGone,
+  noteCertificateError,
+  isGameWindow,
+  gameWindowForPopout,
+  isPopoutWindow,
+  menuPlacement,
+  loadingBannerEnabled,
 };

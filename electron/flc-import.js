@@ -16,14 +16,14 @@ function importFromFlc(flcServersJsonPath) {
   try {
     raw = fs.readFileSync(flcServersJsonPath, 'utf8');
   } catch (err) {
-    console.warn('importFromFlc: could not read file', err.message);
+    console.warn('importFromFlc: could not read file', err && err.name ? err.name : 'Error');
     return [];
   }
   let data;
   try {
     data = JSON.parse(raw);
   } catch (err) {
-    console.warn('importFromFlc: malformed JSON', err.message);
+    console.warn('importFromFlc: malformed JSON', err && err.name ? err.name : 'Error');
     return [];
   }
   if (!data || !Array.isArray(data.servers)) {

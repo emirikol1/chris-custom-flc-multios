@@ -1,4 +1,7 @@
-const { app, BrowserWindow, dialog, ipcMain, net, shell } = require('electron');
+const { app, BrowserWindow, clipboard, dialog, ipcMain, net, protocol, shell, session, screen } = require('electron');
+const { registerMediaSchemes, attachMediaProtocol } = require('./media-protocol');
+
+registerMediaSchemes(protocol);
 const fs = require('fs');
 const path = require('path');
 const {
@@ -8,6 +11,7 @@ const {
   getAiProviderPath,
   getWindowStatePath,
   getNarratorRoot,
+  getDataDir,
 } = require('./paths');
 const { readGpuPrefs } = require('./gpu-prefs');
 const { browserLikeUserAgent } = require('./user-agent');
@@ -19,6 +23,7 @@ const {
   logInfo,
   logError,
   logWarn,
+  logDebug,
   registerRendererLogIpc,
 } = require('./logger');
 
@@ -35,6 +40,10 @@ if (gpuPrefsAtStartup.preferSoftwareWebgl) {
   app.commandLine.appendSwitch('use-angle', 'swiftshader');
   logInfo('[main] Software WebGL (SwiftShader) enabled from gpu-prefs');
 }
+
+const { chooseDiskCache, diskCacheSwitchValue } = require('./cache-policy');
+const diskCache = chooseDiskCache(getDataDir());
+app.commandLine.appendSwitch('disk-cache-size', diskCacheSwitchValue(diskCache.limitBytes));
 
 const {
   loadServers,
@@ -77,7 +86,30 @@ const {
   runInLiveGameWindows,
   hasLiveGameWindows,
   getAutologinContext,
+  handleStatsGetContext,
+  handleStatsGetSnapshot,
+  handleStatsSetSampling,
+  handleStatsCopyReport,
+  handleStatsSaveDiagnostics,
+  handleStatsFullRefresh,
+  handleStatsBadUrls,
+  handleStatsCopyBadUrls,
+  noteGpuProcessGone,
+  noteCertificateError,
+  isGameWindow,
+  gameWindowForPopout,
+  isPopoutWindow,
+  menuPlacement,
+  windowForServer,
 } = require('./game-window');
+const { registerNetTraceIpc } = require('./net-trace-ipc');
+const { createJoinHistory } = require('./join-history');
+const { initSlowCache } = require('./slow-cache-runtime');
+const { createProblemLog } = require('./problem-log');
+const { createMachineBaseline } = require('./machine-baseline');
+const { createTelemetryHub } = require('./telemetry-hub');
+const { detectIssues, DEFAULT_THRESHOLDS } = require('./issue-detector');
+const { collectSystemInfo } = require('./system-info');
 const { createNarratorService } = require('./narrator-service');
 const { mudToAnsi, mudToHtml } = require('./mud-color');
 const {
@@ -95,11 +127,72 @@ const {
 const { loadScoreboard } = require('./combat-stats');
 
 const serversFilePath = getServersPath();
+
+const joinHistory = createJoinHistory({
+  filePath: path.join(getDataDir(), 'join-history.json'),
+  log: {
+    warn: (name) => logWarn('[join-history] failed', { error: name }),
+  },
+});
+
+initSlowCache({
+  filePath: path.join(getDataDir(), 'slow-cache-notice.json'),
+  logInfo,
+  clipboard,
+  notify() {
+    sendToJoinWindow('slowcache:updated', {});
+  },
+});
+
+try {
+  fs.unlinkSync(path.join(app.getPath('userData'), 'asset-cache-state.json'));
+} catch {
+  /* stale state file is already gone */
+}
+
+const problemLog = createProblemLog({
+  filePath: path.join(getDataDir(), 'problem-log.jsonl'),
+  clientVersion: app.getVersion(),
+  log: {
+    warn: (msg, extra) => logWarn(msg, extra),
+  },
+});
+
+const machineBaseline = createMachineBaseline({
+  filePath: path.join(getDataDir(), 'machine-baseline.json'),
+});
+
+const telemetryHub = createTelemetryHub({
+  log: { info: logInfo, debug: logDebug, warn: logWarn },
+  history: joinHistory,
+  detector: detectIssues,
+  thresholds: DEFAULT_THRESHOLDS,
+  problemLog,
+});
+
+/** @type {Promise<object | null> | null} */
+let systemInfoPromise = null;
+
+function getSystemInfo() {
+  if (!systemInfoPromise) {
+    systemInfoPromise = collectSystemInfo({
+      app,
+      screen,
+      gpuPrefs: readGpuPrefs(gpuPrefsPath),
+      clientVersion: pkg.version,
+    }).catch((err) => {
+      systemInfoPromise = null;
+      logWarn('[main] system info failed', { error: err && err.name ? err.name : 'Error' });
+      return null;
+    });
+  }
+  return systemInfoPromise;
+}
 const appPrefsPath = getAppPrefsPath();
 const aiProviderPath = getAiProviderPath();
 const narratorRoot = getNarratorRoot();
 const pkg = require('../package.json');
-const { checkForAppUpdate } = require('./app-update');
+const { checkForAppUpdate, publicApprovalCommands } = require('./app-update');
 
 const windowState = createWindowStateStore({ filePath: getWindowStatePath() });
 
@@ -130,7 +223,7 @@ process.on('uncaughtException', (err) => {
 });
 
 process.on('unhandledRejection', (reason) => {
-  logError('unhandledRejection', reason);
+  logError('unhandledRejection', { name: reason && reason.name ? reason.name : typeof reason });
 });
 
 function sendToJoinWindow(channel, payload) {
@@ -602,6 +695,13 @@ registerGameIpc(gpuPrefsPath, {
     const n = normalizePromptGlowStrength(strength);
     saveServerChoice(serverId, { promptGlowStrength: n }, `promptGlowStrength=${n}`);
   },
+  getDiskCache: () => ({ limitBytes: diskCache.limitBytes, mode: diskCache.mode }),
+  hub: telemetryHub,
+  joinHistory,
+  appPrefs: { get: () => readAppPrefs(appPrefsPath) },
+  machineBaseline,
+  getSystemInfo,
+  notifyJoinWindow: sendToJoinWindow,
   forgetPromptAppearance: (serverId) => {
     if (!serverId) return false;
     try {
@@ -636,6 +736,114 @@ registerGameIpc(gpuPrefsPath, {
 });
 registerNarratorIpc();
 
+ipcMain.handle('stats:get-context', (event) => handleStatsGetContext(event.sender));
+ipcMain.handle('stats:get-snapshot', (_event, serverId) => handleStatsGetSnapshot(serverId));
+ipcMain.handle('stats:set-sampling', (_event, serverId, enabled, intervalMs) => (
+  handleStatsSetSampling(serverId, enabled === true, intervalMs)
+));
+ipcMain.handle('stats:copy-report', (_event, serverId, opts) => handleStatsCopyReport(serverId, opts));
+ipcMain.handle('stats:save-diagnostics', (_event, serverId) => handleStatsSaveDiagnostics(serverId));
+ipcMain.handle('stats:full-refresh', (_event, serverId) => handleStatsFullRefresh(serverId));
+ipcMain.handle('stats:bad-urls', (_event, serverId) => handleStatsBadUrls(serverId));
+ipcMain.handle('stats:copy-bad-urls', (_event, serverId) => handleStatsCopyBadUrls(serverId));
+const { createAdminContactHandlers } = require('./admin-contact');
+const { formatBadUrlsText } = require('./bad-urls');
+const { buildTroubleshootingReport } = require('./ts-report');
+const { formatJoinSummary } = require('./join-telemetry');
+const adminContact = createAdminContactHandlers({
+  serversFilePath,
+  loadServers,
+  saveServers,
+  ensureServersFile,
+  windowForServer,
+  getSnapshot: handleStatsGetSnapshot,
+  getBadUrls: handleStatsBadUrls,
+  formatBadUrlsText,
+  buildReport: buildTroubleshootingReport,
+  formatJoinSummary,
+  clipboard,
+  openExternal: (url) => shell.openExternal(url),
+  clientVersion: pkg.version,
+  onSaved: () => sendToJoinWindow('servers:changed', {}),
+  logWarn,
+});
+ipcMain.handle('stats:get-admin-email', (_event, serverId) => adminContact.getAdminEmail(serverId));
+ipcMain.handle('stats:set-admin-email', (_event, serverId, email) => adminContact.setAdminEmail(serverId, email));
+ipcMain.handle('stats:email-admin', (_event, serverId) => adminContact.emailAdmin(serverId));
+registerNetTraceIpc({
+  ipcMain,
+  clipboard,
+  windowForServer,
+  getServerHost(serverId) {
+    if (typeof serverId !== 'string' || !serverId) return null;
+    let servers;
+    try {
+      servers = loadServers(serversFilePath);
+    } catch {
+      return null;
+    }
+    const server = Array.isArray(servers) ? servers.find((row) => row && row.id === serverId) : null;
+    if (!server || typeof server.url !== 'string') return null;
+    let parsed;
+    try {
+      parsed = new URL(server.url);
+    } catch {
+      return null;
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    const host = parsed.hostname;
+    if (!host) return null;
+    const port = parsed.port ? Number(parsed.port) : (parsed.protocol === 'https:' ? 443 : 80);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+    const { shortServerHash } = require('./log-ids');
+    return { host, port, serverHash: shortServerHash(serverId) };
+  },
+});
+ipcMain.handle('servers:cache-info', async () => {
+  const out = {};
+  try {
+    const servers = loadServers(serversFilePath);
+    const rows = Array.isArray(servers) ? servers : [];
+    await Promise.all(rows.map(async (server) => {
+      const id = server && typeof server.id === 'string' ? server.id : '';
+      if (!id) return;
+      let cacheBytes = null;
+      let objects = null;
+      try {
+        const gameSession = session.fromPartition(`persist:game-${id}`);
+        const size = await gameSession.getCacheSize();
+        cacheBytes = typeof size === 'number' && Number.isFinite(size) ? size : null;
+      } catch {
+        cacheBytes = null;
+      }
+      try {
+        const history = joinHistory.list(id);
+        const last = history.length ? history[history.length - 1] : null;
+        const requests = last && last.requests;
+        objects = typeof requests === 'number' && Number.isFinite(requests) ? requests : null;
+      } catch {
+        objects = null;
+      }
+      out[id] = { cacheBytes, objects };
+    }));
+  } catch (err) {
+    logWarn('[main] cache info failed', { error: err && err.name ? err.name : 'Error' });
+  }
+  return out;
+});
+
+app.on('child-process-gone', (_event, details) => {
+  if (!details || details.type !== 'GPU') return;
+  const reason = typeof details.reason === 'string' && details.reason ? details.reason : 'unknown';
+  logWarn('[main] gpu process gone', { reason });
+  noteGpuProcessGone();
+});
+
+app.on('certificate-error', (_event, webContents, _url, error) => {
+  const name = typeof error === 'string' && error ? error : 'ERR_CERT';
+  noteCertificateError(webContents, name);
+});
+
 function registerUpdateIpc() {
   async function runAppUpdate(download) {
     let osRelease = '';
@@ -657,12 +865,16 @@ function registerUpdateIpc() {
     else if (result.status === 'current' || result.status === 'ahead' || result.status === 'available') {
       logInfo(`[update] ${result.status}`);
     } else logWarn(download ? '[update] download failed' : '[update] check failed');
-    return {
+    const payload = {
       status: result.status,
       message: result.message,
       version: result.version,
       fileName: result.fileName,
     };
+    if (result.status === 'downloaded') {
+      payload.approvalCommands = publicApprovalCommands(result.approvalCommands);
+    }
+    return payload;
   }
 
   ipcMain.handle('app:check-update', () => runAppUpdate(false));
@@ -670,13 +882,46 @@ function registerUpdateIpc() {
 }
 registerUpdateIpc();
 
+app.on('browser-window-focus', (_event, win) => {
+  if (isGameWindow(win)) {
+    menuPlacement.onFocus(win);
+    return;
+  }
+  const parent = gameWindowForPopout(win);
+  if (parent) {
+    menuPlacement.onFocus(parent);
+    return;
+  }
+  if (isPopoutWindow(win)) return;
+  menuPlacement.setPlain();
+});
+
 app.whenReady().then(() => {
+  try {
+    attachMediaProtocol(protocol);
+  } catch (err) {
+    logWarn('[main] media protocol failed', { error: err && err.name ? err.name : 'Error' });
+  }
+  menuPlacement.setPlain();
   ensureServersFile(serversFilePath);
   const gpuMode = gpuPrefsAtStartup.preferSoftwareWebgl ? 'software' : 'hardware';
   const version = pkg.version || 'unknown';
-  logInfo(`Starting ${pkg.name} v${version} (GPU mode: ${gpuMode}, mud: ${isMudEnabled() ? 'on' : 'off'})`);
+  const cacheMb = Math.round(diskCache.limitBytes / (1024 * 1024));
+  logInfo(`Starting ${pkg.name} v${version} (GPU mode: ${gpuMode}, mud: ${isMudEnabled() ? 'on' : 'off'}, cache: ${cacheMb} MB (${diskCache.mode}))`);
 
   createWindow();
+
+  // Machine speed is learned from observed join work (join history). The
+  // micro-benchmark is only a fallback before any join has been recorded.
+  setTimeout(() => {
+    try {
+      const hasHistory = Object.keys(joinHistory.all() || {}).length > 0;
+      if (hasHistory || machineBaseline.get()) return;
+      machineBaseline.refresh();
+    } catch (err) {
+      logWarn('[main] baseline refresh failed', { error: err && err.name ? err.name : 'Error' });
+    }
+  }, 3000);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -689,4 +934,22 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  try {
+    problemLog.closeAll('quit');
+  } catch (err) {
+    logWarn('[problem-log] close failed', { error: err && err.name ? err.name : 'Error' });
+  }
+});
+
+ipcMain.handle('app:copy-text', (_event, text) => {
+  if (typeof text !== 'string' || text.length > 2000) return false;
+  try {
+    clipboard.writeText(text);
+  } catch {
+    return false;
+  }
+  return true;
 });

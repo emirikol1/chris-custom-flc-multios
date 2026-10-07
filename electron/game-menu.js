@@ -5,7 +5,7 @@ const { PROMPT_GLOW_COLORS, normalizePromptGlow, normalizePromptGlowStrength } =
 
 /**
  * Menu bar for the main game window. Popouts keep the hidden default.
- * Custom items are the center-prompts checkbox and the highlight submenu.
+ * Custom items are Full Refresh, the center-prompts checkbox, and the highlight submenu.
  * The rest match Electron's usual View menu.
  *
  * @param {{
@@ -19,6 +19,15 @@ const { PROMPT_GLOW_COLORS, normalizePromptGlow, normalizePromptGlowStrength } =
  *   onTogglePromptAutoRaise?: (enabled: boolean) => void,
  *   onPickPromptGlow?: (glow: string) => void,
  *   onPickPromptGlowStrength?: () => void,
+ *   onFullRefresh?: () => void,
+ *   verboseLogging?: boolean,
+ *   onOpenWorldStats?: () => void,
+ *   onToggleVerboseLogging?: (enabled: boolean) => void,
+ *   onOpenLogs?: () => void,
+ *   onOpenProblemLog?: () => void,
+ *   onCopyTroubleshooting?: () => void,
+ *   onSaveDiagnostics?: () => void,
+ *   platform?: string,
  * }} [opts]
  */
 function gameWindowMenuTemplate({
@@ -27,22 +36,38 @@ function gameWindowMenuTemplate({
   promptAutoRaise = true,
   promptGlow = 'blue',
   promptGlowStrength = 100,
+  verboseLogging = false,
   onToggleCenterPrompts,
   onTogglePromptHighlight,
   onTogglePromptAutoRaise,
   onPickPromptGlow,
   onPickPromptGlowStrength,
+  onFullRefresh,
+  onOpenWorldStats,
+  onToggleVerboseLogging,
+  onOpenLogs,
+  onOpenProblemLog,
+  onCopyTroubleshooting,
+  onSaveDiagnostics,
+  platform,
 } = {}) {
   const glow = normalizePromptGlow(promptGlow);
   const strength = normalizePromptGlowStrength(promptGlowStrength);
-  return [
+  const template = [
     { role: 'fileMenu' },
     { role: 'editMenu' },
     {
       label: 'View',
       submenu: [
         { role: 'reload' },
-        { role: 'forceReload' },
+        {
+          id: 'full-refresh',
+          label: 'Full Refresh (clear cache)',
+          accelerator: 'CmdOrCtrl+Shift+R',
+          click() {
+            onFullRefresh && onFullRefresh();
+          },
+        },
         { role: 'toggleDevTools' },
         { type: 'separator' },
         { role: 'resetZoom' },
@@ -50,6 +75,60 @@ function gameWindowMenuTemplate({
         { role: 'zoomOut' },
         { type: 'separator' },
         { role: 'togglefullscreen' },
+        { type: 'separator' },
+        {
+          id: 'diagnostics',
+          label: 'Diagnostics',
+          submenu: [
+            {
+              id: 'world-stats',
+              label: 'World Statistics…',
+              accelerator: 'CmdOrCtrl+Shift+S',
+              click() {
+                if (typeof onOpenWorldStats === 'function') onOpenWorldStats();
+              },
+            },
+            { type: 'separator' },
+            {
+              id: 'verbose-logging',
+              label: 'Verbose logging (this session)',
+              type: 'checkbox',
+              checked: verboseLogging === true,
+              click(menuItem) {
+                if (typeof onToggleVerboseLogging !== 'function') return;
+                onToggleVerboseLogging(Boolean(menuItem && menuItem.checked));
+              },
+            },
+            {
+              id: 'open-logs',
+              label: 'Open logs folder',
+              click() {
+                if (typeof onOpenLogs === 'function') onOpenLogs();
+              },
+            },
+            {
+              id: 'open-problem-log',
+              label: 'Open problem log',
+              click() {
+                if (typeof onOpenProblemLog === 'function') onOpenProblemLog();
+              },
+            },
+            {
+              id: 'copy-ts',
+              label: 'Copy troubleshooting info',
+              click() {
+                if (typeof onCopyTroubleshooting === 'function') onCopyTroubleshooting();
+              },
+            },
+            {
+              id: 'save-diagnostics',
+              label: 'Save diagnostics file…',
+              click() {
+                if (typeof onSaveDiagnostics === 'function') onSaveDiagnostics();
+              },
+            },
+          ],
+        },
         { type: 'separator' },
         {
           id: 'center-prompts',
@@ -113,6 +192,33 @@ function gameWindowMenuTemplate({
             },
           ],
         },
+      ],
+    },
+    { role: 'windowMenu' },
+  ];
+  if (platform === 'darwin') template.unshift({ role: 'appMenu' });
+  return template;
+}
+
+/**
+ * macOS menu for the join window and every other non-game window.
+ * Prompt, glow, and diagnostics items stay on the game menu only.
+ * @returns {Array<object>}
+ */
+function plainAppMenuTemplate() {
+  return [
+    { role: 'appMenu' },
+    { role: 'editMenu' },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'toggleDevTools' },
       ],
     },
     { role: 'windowMenu' },
@@ -197,5 +303,6 @@ function glowSwatch(hex) {
 
 module.exports = {
   gameWindowMenuTemplate,
+  plainAppMenuTemplate,
   solidPng,
 };

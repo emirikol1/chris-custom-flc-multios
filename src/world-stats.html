@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>World Statistics</title>
+    <link rel="stylesheet" href="world-stats.css" />
+  </head>
+  <body>
+    <header class="stats-header">
+      <h1 id="stats-label" class="stats-label">—</h1>
+      <div class="sync-cluster">
+        <span class="status-light unknown" id="sync-light" role="img" aria-label="Unknown"></span>
+        <span id="sync-text">Unknown</span>
+        <span id="sync-cause" class="sync-cause" hidden></span>
+      </div>
+      <p class="sync-meta"><span id="sync-rtt">—</span> · <span id="sync-reconnects">—</span> reconnects</p>
+      <div class="sync-activity">
+        <p id="sync-last-request">—</p>
+        <p id="sync-last-message">—</p>
+      </div>
+    </header>
+
+    <main class="stats-scroll">
+      <section class="stats-section" aria-labelledby="issues-heading">
+        <div class="issues-heading-row">
+          <h2 id="issues-heading">Issues detected</h2>
+          <button type="button" class="issue-clear-resolved" id="clear-resolved" hidden>Clear resolved</button>
+        </div>
+        <p id="baseline-note" class="baseline-note" hidden></p>
+        <p id="findings-summary" class="muted">No issues detected</p>
+        <div id="findings-list" role="list"></div>
+      </section>
+
+      <section class="stats-section" aria-labelledby="join-heading">
+        <h2 id="join-heading">Join</h2>
+        <div id="phase-bar" class="phase-bar">
+          <div class="phase-seg" id="phase-transfers" data-phase="transfers" hidden>
+            <span class="phase-label">transfers</span>
+            <span class="phase-ms" id="phase-transfers-ms">—</span>
+          </div>
+          <div class="phase-seg" id="phase-worldData" data-phase="worldData" hidden>
+            <span class="phase-label">world data</span>
+            <span class="phase-ms" id="phase-worldData-ms">—</span>
+          </div>
+          <div class="phase-seg" id="phase-init" data-phase="init" hidden>
+            <span class="phase-label">init</span>
+            <span class="phase-ms" id="phase-init-ms">—</span>
+          </div>
+          <div class="phase-seg" id="phase-i18n" data-phase="i18n" hidden>
+            <span class="phase-label">i18n</span>
+            <span class="phase-ms" id="phase-i18n-ms">—</span>
+          </div>
+          <div class="phase-seg" id="phase-setup" data-phase="setup" hidden>
+            <span class="phase-label">setup</span>
+            <span class="phase-ms" id="phase-setup-ms">—</span>
+          </div>
+          <div class="phase-seg" id="phase-canvas" data-phase="canvas" hidden>
+            <span class="phase-label">canvas</span>
+            <span class="phase-ms" id="phase-canvas-ms">—</span>
+          </div>
+        </div>
+        <p id="phase-loading" class="muted">loading…</p>
+        <p id="compare-line" class="compare-line">this join — · typical — · first — · fastest —</p>
+      </section>
+
+      <section class="stats-section" aria-labelledby="transfers-heading">
+        <h2 id="transfers-heading">Transfers</h2>
+        <div class="metrics">
+          <div class="metric"><span class="k">Requests</span><span class="v" id="xfer-requests">—</span></div>
+          <div class="metric"><span class="k">Bytes</span><span class="v" id="xfer-bytes">—</span></div>
+          <div class="metric"><span class="k">Cache hit</span><span class="v" id="xfer-cache">—</span></div>
+          <div class="metric"><span class="k">Rate</span><span class="v" id="xfer-rate">—</span></div>
+          <div class="metric"><span class="k">TTFB p50</span><span class="v" id="xfer-ttfb-p50">—</span></div>
+          <div class="metric"><span class="k">TTFB p95</span><span class="v" id="xfer-ttfb-p95">—</span></div>
+          <div class="metric"><span class="k">Slow downloads</span><span class="v" id="xfer-slow">—</span></div>
+          <div class="metric"><span class="k">Fetching</span><span class="v" id="xfer-busy">—</span></div>
+        </div>
+        <div class="type-wrap">
+          <table class="type-table">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Requests</th>
+                <th>Bytes</th>
+                <th>Cached</th>
+              </tr>
+            </thead>
+            <tbody id="xfer-types"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="stats-section" aria-labelledby="world-heading">
+        <h2 id="world-heading">World</h2>
+        <div class="metrics">
+          <div class="metric"><span class="k">Foundry</span><span class="v" id="world-foundry">—</span></div>
+          <div class="metric"><span class="k">Generation</span><span class="v" id="world-generation">—</span></div>
+          <div class="metric"><span class="k">System</span><span class="v" id="world-system">—</span></div>
+          <div class="metric"><span class="k">Performance</span><span class="v" id="world-perf">—</span></div>
+          <div class="metric"><span class="k">FPS</span><span class="v" id="world-fps">—</span></div>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm modules-toggle" id="world-modules-toggle" aria-expanded="false" aria-controls="world-modules">
+          <span id="world-modules-count">—</span> active
+        </button>
+        <ul id="world-modules" class="module-list" hidden></ul>
+        <button type="button" class="btn btn-ghost btn-sm modules-toggle" id="world-packages-toggle" hidden aria-expanded="false" aria-controls="world-packages">
+          Slowest packages during join
+        </button>
+        <ul id="world-packages" class="module-list" hidden></ul>
+        <h3 class="subhead">Documents</h3>
+        <div class="doc-grid">
+          <div class="metric"><span class="k">Actors</span><span class="v" id="doc-actors">—</span></div>
+          <div class="metric"><span class="k">Items</span><span class="v" id="doc-items">—</span></div>
+          <div class="metric"><span class="k">Scenes</span><span class="v" id="doc-scenes">—</span></div>
+          <div class="metric"><span class="k">Journal</span><span class="v" id="doc-journal">—</span></div>
+          <div class="metric"><span class="k">Tables</span><span class="v" id="doc-tables">—</span></div>
+          <div class="metric"><span class="k">Macros</span><span class="v" id="doc-macros">—</span></div>
+          <div class="metric"><span class="k">Playlists</span><span class="v" id="doc-playlists">—</span></div>
+          <div class="metric"><span class="k">Cards</span><span class="v" id="doc-cards">—</span></div>
+          <div class="metric"><span class="k">Folders</span><span class="v" id="doc-folders">—</span></div>
+          <div class="metric"><span class="k">Users</span><span class="v" id="doc-users">—</span></div>
+          <div class="metric"><span class="k">Messages</span><span class="v" id="doc-messages">—</span></div>
+          <div class="metric"><span class="k">Packs</span><span class="v" id="doc-packs">—</span></div>
+        </div>
+        <h3 class="subhead">Scene</h3>
+        <div class="doc-grid">
+          <div class="metric"><span class="k">Tokens</span><span class="v" id="scene-tokens">—</span></div>
+          <div class="metric"><span class="k">Tiles</span><span class="v" id="scene-tiles">—</span></div>
+          <div class="metric"><span class="k">Lights</span><span class="v" id="scene-lights">—</span></div>
+          <div class="metric"><span class="k">Walls</span><span class="v" id="scene-walls">—</span></div>
+        </div>
+      </section>
+
+      <section class="stats-section" aria-labelledby="resources-heading">
+        <h2 id="resources-heading">Resources</h2>
+        <div class="metric"><span class="k">Renderer heap</span><span class="v"><span id="heap-used">—</span> / <span id="heap-limit">—</span></span></div>
+        <div class="meter" aria-hidden="true"><span id="heap-bar"></span></div>
+        <div class="metrics resource-grid">
+          <div class="metric"><span class="k">Renderer CPU</span><span class="v" id="renderer-cpu">—</span></div>
+          <div class="metric"><span class="k">Renderer memory</span><span class="v" id="renderer-mem">—</span></div>
+          <div class="metric"><span class="k">GPU CPU</span><span class="v" id="gpu-cpu">—</span></div>
+          <div class="metric"><span class="k">GPU memory</span><span class="v" id="gpu-mem">—</span></div>
+          <div class="metric"><span class="k">Load</span><span class="v" id="load-avg">—</span></div>
+        </div>
+        <div class="metric"><span class="k">System memory</span><span class="v"><span id="sysmem-free">—</span> free / <span id="sysmem-total">—</span></span></div>
+        <div class="meter" aria-hidden="true"><span id="sysmem-bar"></span></div>
+        <div class="metric"><span class="k">Disk cache</span><span class="v"><span id="cache-used">—</span> / <span id="cache-limit">—</span> <span id="cache-mode"></span></span></div>
+        <div class="meter" aria-hidden="true"><span id="cache-bar"></span></div>
+        <p class="muted" id="cache-read">—</p>
+      </section>
+
+      <section class="stats-section" aria-labelledby="client-heading">
+        <h2 id="client-heading">Client events</h2>
+        <div class="metrics">
+          <div class="metric"><span class="k">Crashes</span><span class="v"><span id="crash-count">—</span> · <span id="crash-reason">—</span></span></div>
+          <div class="metric"><span class="k">Unresponsive</span><span class="v" id="unresponsive">—</span></div>
+          <div class="metric"><span class="k">Long tasks</span><span class="v"><span id="long-count">—</span> · worst <span id="long-worst">—</span></span></div>
+          <div class="metric"><span class="k">WebGL</span><span class="v" id="webgl-mode">—</span></div>
+          <div class="metric"><span class="k">Update</span><span class="v" id="update-status">—</span></div>
+          <div class="metric"><span class="k">4xx</span><span class="v" id="http-4xx">—</span></div>
+          <div class="metric"><span class="k">5xx</span><span class="v" id="http-5xx">—</span></div>
+          <div class="metric"><span class="k">Clock skew</span><span class="v" id="clock-skew">—</span></div>
+        </div>
+        <p id="webgl-reason" class="muted" hidden></p>
+        <div id="gpu-gone-row" class="metric" hidden>
+          <span class="k">GPU process</span><span class="v" id="gpu-gone">—</span>
+        </div>
+        <h3 class="subhead">Page errors</h3>
+        <div id="page-errors" class="name-list">—</div>
+        <h3 class="subhead">Network errors</h3>
+        <div id="net-errors" class="name-list">—</div>
+      </section>
+
+      <section class="stats-section" aria-labelledby="system-heading">
+        <h2 id="system-heading">System</h2>
+        <div class="stack">
+          <div class="metric"><span class="k">OS</span><span class="v" id="sys-os">—</span></div>
+          <div class="metric"><span class="k">CPU</span><span class="v" id="sys-cpu">—</span></div>
+          <div class="metric"><span class="k">Memory</span><span class="v" id="sys-mem">—</span></div>
+          <div class="metric"><span class="k">GPU</span><span class="v" id="sys-gpu">—</span></div>
+          <div class="metric"><span class="k">Displays</span><span class="v" id="sys-displays">—</span></div>
+          <div class="metric"><span class="k">Versions</span><span class="v" id="sys-versions">—</span></div>
+        </div>
+      </section>
+    </main>
+
+    <section id="bad-urls-panel" class="bad-urls-panel" hidden aria-label="Bad URLs">
+      <div class="bad-urls-bar">
+        <span class="bad-urls-heading">Bad URLs</span>
+        <span class="bad-urls-actions">
+          <button type="button" class="btn btn-ghost btn-sm" id="bad-urls-copy">Copy</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="bad-urls-close">Close</button>
+        </span>
+      </div>
+      <div id="bad-urls-list" class="bad-urls-list"></div>
+    </section>
+
+    <section class="net-trace" aria-labelledby="net-trace-heading">
+      <div class="net-trace-bar">
+        <h2 id="net-trace-heading">
+          <button type="button" class="net-trace-toggle" id="net-trace-toggle" aria-expanded="false" aria-controls="net-trace-body">Network trace</button>
+        </h2>
+        <span id="net-trace-summary" class="muted net-trace-summary">not run</span>
+      </div>
+      <div id="net-trace-body" hidden>
+        <div class="net-trace-actions">
+          <button type="button" class="btn btn-secondary btn-sm" id="net-trace-run">Run trace (3 sweeps)</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="net-trace-copy" disabled>Copy</button>
+        </div>
+        <p id="net-trace-progress" class="muted" hidden></p>
+        <label class="live-toggle net-trace-opt">
+          <input type="checkbox" id="net-trace-addresses" />
+          Include hop addresses (reveals your ISP route)
+        </label>
+        <p class="muted">Addresses are hidden by default; your own address is never recorded.</p>
+        <pre id="net-trace-output" class="net-trace-output"></pre>
+      </div>
+    </section>
+
+    <footer class="stats-footer">
+      <label class="live-toggle" title="Sample this world while the window is open">
+        <input type="checkbox" id="live-sampling" checked />
+        Live
+      </label>
+      <div class="footer-actions">
+        <div id="confirm-clear" class="inline-confirm" hidden>
+          <span>Clear this server's cache?</span>
+          <button type="button" class="btn btn-danger btn-sm" id="confirm-clear-yes">Clear</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="confirm-clear-no">Cancel</button>
+        </div>
+        <div id="confirm-refresh" class="inline-confirm" hidden>
+          <span>Reload the world from the server?</span>
+          <button type="button" class="btn btn-primary btn-sm" id="confirm-refresh-yes">Refresh</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="confirm-refresh-no">Cancel</button>
+        </div>
+        <div id="email-admin-panel" class="email-admin-panel" hidden>
+          <label class="email-admin-label" for="email-admin-input">Admin contact email</label>
+          <input id="email-admin-input" type="email" inputmode="email" autocomplete="off" spellcheck="false" maxlength="254" placeholder="name@example.com" />
+          <button type="button" class="btn btn-primary btn-sm" id="email-admin-save">Save</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="email-admin-clear" hidden>Clear</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="email-admin-cancel">Cancel</button>
+        </div>
+        <span class="email-admin-group">
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-email-admin" title="Email this server's admin a performance report">Email admin…</button>
+          <button type="button" class="btn btn-ghost btn-sm email-admin-edit" id="btn-email-admin-edit" title="Edit admin email" aria-label="Edit admin email" aria-expanded="false" aria-controls="email-admin-panel">✎</button>
+        </span>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-bad-urls" aria-expanded="false" aria-controls="bad-urls-panel" disabled>Bad URLs</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-copy">Copy troubleshooting info</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-save">Save diagnostics…</button>
+        <button type="button" class="btn btn-danger btn-sm" id="btn-clear">Clear this server's cache</button>
+        <button type="button" class="btn btn-primary btn-sm" id="btn-refresh">Full Refresh</button>
+      </div>
+    </footer>
+    <div id="notifications" class="notifications"></div>
+
+    <script src="world-stats-format.js"></script>
+    <script src="world-stats.js"></script>
+  </body>
+</html>

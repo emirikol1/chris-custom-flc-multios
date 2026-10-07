@@ -5,13 +5,15 @@ const DEFAULT_APP_PREFS = {
   mudEnabled: false,
   serversCollapsed: false,
   mudCollapsed: false,
+  loadingBannerEnabled: true,
 };
 
-/** @typedef {{ mudEnabled: boolean, serversCollapsed: boolean, mudCollapsed: boolean }} AppPrefs */
+/** @typedef {{ mudEnabled: boolean, serversCollapsed: boolean, mudCollapsed: boolean, loadingBannerEnabled: boolean }} AppPrefs */
 
 const BOOL_KEYS = /** @type {(keyof AppPrefs)[]} */ (Object.keys(DEFAULT_APP_PREFS));
 
 /**
+ * Unknown keys (including a leftover diskCacheMb) are ignored.
  * @param {string} filePath
  * @returns {AppPrefs}
  */
@@ -23,7 +25,9 @@ function readAppPrefs(filePath) {
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     const out = { ...DEFAULT_APP_PREFS };
     for (const key of BOOL_KEYS) {
-      out[key] = Boolean(parsed && parsed[key]);
+      if (parsed && Object.prototype.hasOwnProperty.call(parsed, key)) {
+        out[key] = Boolean(parsed[key]);
+      }
     }
     return out;
   } catch {
@@ -32,6 +36,7 @@ function readAppPrefs(filePath) {
 }
 
 /**
+ * Writes only the boolean prefs. A leftover diskCacheMb in the file is not written back.
  * @param {string} filePath
  * @param {Partial<AppPrefs>} patch
  * @returns {AppPrefs}

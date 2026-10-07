@@ -1,0 +1,73 @@
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #161818;
+  color: #e8e4d8;
+  font: 16px/1.45 "Segoe UI", sans-serif;
+}
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  box-sizing: border-box;
+}
+
+.card {
+  width: min(40rem, 100%);
+  background: #1e2121;
+  border: 1px solid #3a4038;
+  border-radius: 12px;
+  padding: 1.25rem 1.35rem 1rem;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+h1 {
+  margin: 0 0 0.6rem;
+  font-size: 1.25rem;
+  line-height: 1.3;
+  color: #f6d98a;
+}
+
+p {
+  margin: 0 0 0.65rem;
+}
+
+.preview {
+  margin: 0.4rem 0 0.8rem;
+  max-height: 38vh;
+  overflow: auto;
+  padding: 0.7rem 0.8rem;
+  background: #121414;
+  border: 1px solid #2e3330;
+  border-radius: 8px;
+  color: #d9d3c5;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+button {
+  display: inline-block;
+  padding: 0.45rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid #e0a100;
+  background: #3a3018;
+  color: #f6d98a;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #4a3c1c;
+}
+
+.dismiss-row {
+  margin: 0.75rem 0 0;
+  font-size: 0.85rem;
+}
+
+.dismiss-row a {
+  color: #b7b1a4;
+}

@@ -6,10 +6,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   checkForAppUpdate,
   compareVersions,
+  installApprovalCommands,
   installerDestination,
   parseAllowedUpdateUrl,
   planUpdate,
   prefersDebInstaller,
+  publicApprovalCommands,
   resolveAllowedRedirect,
   saveUrlToFile,
 } from '../electron/app-update.js';
@@ -222,5 +224,124 @@ describe('update check is request-only', () => {
     expect(downloadFn).toContain('update?.download');
     expect(downloadFn).toContain('persist: true');
     expect(downloadFn).toContain('status === "downloaded"');
+    expect(downloadFn).toContain('approvalCommands');
+    expect(checkFn).not.toContain('approvalCommands');
+    expect(main).toMatch(/ipcMain\.handle\('app:copy-text'/);
+    expect(main).toContain('publicApprovalCommands');
+    expect(preload).toContain('copyText:');
+    const copyHandler = main.slice(main.indexOf("ipcMain.handle('app:copy-text'"));
+    expect(copyHandler.slice(0, 600)).toMatch(/2000/);
+    expect(copyHandler.slice(0, 600)).not.toMatch(/logInfo|logWarn|logDebug|console\./);
+  });
+});
+
+const WIN_UNBLOCK = 'Get-ChildItem .\\ChrisCustomFLC-MultiOS-*-windows-setup.exe | Unblock-File';
+const WIN_START = 'Start-Process (Get-ChildItem .\\ChrisCustomFLC-MultiOS-*-windows-setup.exe | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName';
+const MAC_XATTR = 'xattr -dr com.apple.quarantine "/Applications/Chris\'s Custom FLC MultiOS.app"';
+const MAC_OPEN = 'open "/Applications/Chris\'s Custom FLC MultiOS.app"';
+const MAC_CODESIGN = 'codesign --force --deep --sign - "/Applications/Chris\'s Custom FLC MultiOS.app"';
+
+function expectNoMachinePaths(commands) {
+  const dumped = JSON.stringify(commands);
+  expect(dumped).not.toMatch(/http/i);
+  expect(dumped).not.toContain('/home/');
+  expect(dumped).not.toContain('C:\\Users');
+}
+
+describe('installApprovalCommands', () => {
+  it('returns the Windows PowerShell lines, both Mac blocks, and nothing on linux', () => {
+    const win = installApprovalCommands('win32');
+    expect(win).toHaveLength(1);
+    expect(win[0].label).toBe('Windows: close the app, then paste this in PowerShell from your Downloads folder');
+    expect(win[0].text).toBe(`${WIN_UNBLOCK}\n${WIN_START}`);
+
+    const mac = installApprovalCommands('darwin');
+    expect(mac.map((block) => block.label)).toEqual([
+      'Mac: after dragging the app to Applications, paste this in Terminal',
+      'Mac: if macOS says the app is damaged',
+    ]);
+    expect(mac[0].text).toBe(`${MAC_XATTR}\n${MAC_OPEN}`);
+    expect(mac[1].text).toBe(`${MAC_CODESIGN}\n${MAC_XATTR}\n${MAC_OPEN}`);
+
+    expect(installApprovalCommands('linux')).toEqual([]);
+    expectNoMachinePaths([...win, ...mac]);
+  });
+
+  it('passes only label and text, and caps text at 600 characters', () => {
+    const text = 'x'.repeat(640);
+    const cleaned = publicApprovalCommands([
+      { label: 'Keep', text, extra: 'https://secret.example/home/c', path: 'C:\\Users\\secret' },
+      { label: 1, text: 'nope' },
+      null,
+    ]);
+    expect(cleaned).toEqual([{ label: 'Keep', text: 'x'.repeat(600) }]);
+    expect(Object.keys(cleaned[0])).toEqual(['label', 'text']);
+  });
+});
+
+describe('approval commands on download results', () => {
+  const dirs = [];
+  afterEach(() => {
+    for (const dir of dirs) fs.rmSync(dir, { recursive: true, force: true });
+    dirs.length = 0;
+  });
+
+  function releaseBody(fileName) {
+    return release('v0.6.0', [{
+      name: fileName,
+      browser_download_url: GOOD_URL.replace(EXE, fileName),
+    }]);
+  }
+
+  async function downloadFor(platform, fileName) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flc-update-'));
+    dirs.push(dir);
+    return checkForAppUpdate({
+      currentVersion: '0.5.0',
+      platform,
+      downloadsDir: dir,
+      download: true,
+      fetchRelease: async () => releaseBody(fileName),
+      request: async () => ({ statusCode: 200, headers: {}, stream: Readable.from([Buffer.from('installer-bytes')]) }),
+    });
+  }
+
+  it('includes the Unblock-File line on a Windows download', async () => {
+    const result = await downloadFor('win32', EXE);
+    expect(result.status).toBe('downloaded');
+    expect(result.approvalCommands.map((block) => block.text).join('\n')).toContain(WIN_UNBLOCK);
+    expectNoMachinePaths(result.approvalCommands);
+  });
+
+  it('includes both Mac blocks on a darwin download', async () => {
+    const macName = 'ChrisCustomFLC-MultiOS-0.6.0-mac.dmg';
+    const result = await downloadFor('darwin', macName);
+    expect(result.status).toBe('downloaded');
+    expect(result.approvalCommands).toHaveLength(2);
+    expect(result.approvalCommands[0].text).toContain(MAC_XATTR);
+    expect(result.approvalCommands[1].text).toContain(MAC_CODESIGN);
+    expectNoMachinePaths(result.approvalCommands);
+  });
+
+  it('includes none for a linux download or a check-only result', async () => {
+    const linux = await downloadFor('linux', APPIMAGE);
+    expect(linux.status).toBe('downloaded');
+    expect(linux.approvalCommands || []).toEqual([]);
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flc-update-'));
+    dirs.push(dir);
+    const checked = await checkForAppUpdate({
+      currentVersion: '0.5.0',
+      platform: 'darwin',
+      downloadsDir: dir,
+      fetchRelease: async () => releaseBody('ChrisCustomFLC-MultiOS-0.6.0-mac.dmg'),
+      request: async () => {
+        throw new Error('check must not download');
+      },
+    });
+    expect(checked.status).toBe('available');
+    expect(checked.approvalCommands).toBeUndefined();
+    expect(JSON.stringify(checked)).not.toContain('Unblock-File');
+    expect(JSON.stringify(checked)).not.toContain('codesign');
   });
 });

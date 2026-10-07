@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { describeStateKey } = require('./log-ids');
 
 const MIN_DIMENSION = 200;
 const MIN_VISIBLE_PX = 100;
@@ -204,7 +205,7 @@ function createWindowStateStore({ filePath, getDisplays } = {}) {
       writeStates(filePath, states);
     } catch (err) {
       getLogger().logWarn('window-state: save failed', {
-        key,
+        key: describeStateKey(key),
         error: err && err.name ? err.name : 'Error',
       });
     }
@@ -252,7 +253,7 @@ function createWindowStateStore({ filePath, getDisplays } = {}) {
     }
     win.on('close', onClose);
 
-    getLogger().logInfo('window-state: tracking window', { key });
+    getLogger().logInfo('window-state: tracking window', { key: describeStateKey(key) });
 
     return function untrack() {
       clearTimer();
@@ -288,7 +289,7 @@ function createWindowStateStore({ filePath, getDisplays } = {}) {
       writeStates(filePath, states);
     } catch (err) {
       getLogger().logWarn('window-state: set failed', {
-        key,
+        key: describeStateKey(key),
         error: err && err.name ? err.name : 'Error',
       });
     }

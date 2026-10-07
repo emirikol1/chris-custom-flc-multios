@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const log = require('electron-log');
-const { safeLogArgs } = require('./log-format');
+const { safeLogArgs, scrubForLog } = require('./log-format');
 const { getLogsDir } = require('./paths');
 
 const LOGS_DIR = getLogsDir();
@@ -21,14 +21,18 @@ log.transports.file.resolvePathFn = () => MAIN_LOG_PATH;
 log.transports.file.level = zeroLog || logLevel === 'off' || logLevel === 'false' ? false : logLevel;
 log.transports.console.level = zeroLog ? false : logLevel;
 
+/** Runtime level. Starts at the env level; zero-log forces the transports off. */
+let activeLevel = zeroLog ? 'off' : logLevel;
+
 /**
  * @param {'info' | 'warn' | 'error' | 'debug'} fn
  * @param {string} msg
  * @param {unknown[]} args
  */
 function writeLog(fn, msg, args) {
-  const safe = safeLogArgs(args);
-  log[fn](msg, ...safe);
+  const scrubbed = scrubForLog(msg);
+  const safeMsg = typeof scrubbed === 'string' ? scrubbed : '[unloggable]';
+  log[fn](safeMsg, ...safeLogArgs(args));
 }
 
 function logInfo(msg, ...args) {
@@ -55,12 +59,38 @@ function appendRendererLog(level, message) {
   if (zeroLog) {
     return;
   }
-  const line = `[${new Date().toISOString()}] [${level}] ${message}\n`;
+  const scrubbed = scrubForLog(message);
+  const text = typeof scrubbed === 'string' ? scrubbed : '[unloggable]';
+  const line = `[${new Date().toISOString()}] [${level}] ${text}\n`;
   try {
     fs.appendFileSync(RENDERER_LOG_PATH, line, 'utf8');
   } catch (err) {
-    log.error('Failed to write renderer.log', err.message);
+    const name = err && err.name ? err.name : 'Error';
+    log.error('Failed to write renderer.log', name);
   }
+}
+
+/**
+ * Apply a level to the file and console transports. `off` and `false` disable both.
+ * @param {string} level
+ * @throws {RangeError} when `level` is not one of the known electron-log levels
+ */
+function setLogLevel(level) {
+  const next = String(level).toLowerCase();
+  if (!VALID_LEVELS.has(next)) {
+    throw new RangeError('Invalid log level');
+  }
+  activeLevel = next;
+  const transportLevel = next === 'off' || next === 'false' ? false : next;
+  log.transports.file.level = transportLevel;
+  log.transports.console.level = transportLevel;
+}
+
+/**
+ * @returns {string}
+ */
+function getLogLevel() {
+  return activeLevel;
 }
 
 /**
@@ -80,6 +110,8 @@ module.exports = {
   logWarn,
   logError,
   logDebug,
+  setLogLevel,
+  getLogLevel,
   registerRendererLogIpc,
   MAIN_LOG_PATH,
   RENDERER_LOG_PATH,

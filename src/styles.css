@@ -621,6 +621,23 @@ body {
   opacity: 0.7;
 }
 
+.server-cache-line {
+  margin: 0.2rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.server-compact .server-cache-line {
+  margin: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 14rem;
+}
+
 .server-card-actions {
   display: flex;
   flex-wrap: wrap;
@@ -701,4 +718,67 @@ body {
 
 .toast-close:hover {
   color: var(--text);
+}
+
+.toast-persist {
+  flex-direction: column;
+}
+
+.toast-approval {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  width: 100%;
+  min-width: 0;
+  margin-top: 0.35rem;
+}
+
+.toast-approval-label {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+
+.toast-approval-text {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 0.3rem 0.4rem;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.toast-approval-copy {
+  padding: 0.15rem 0.45rem;
+  font-size: 0.75rem;
+}
+
+.server-slow-line {
+  margin: 0.35rem 0 0;
+}
+
+.server-slow-badge {
+  display: inline-block;
+  margin: 0;
+  padding: 0.12rem 0.55rem;
+  border: 1px solid #e0a100;
+  border-radius: 999px;
+  background: #3a3018;
+  color: #f6d98a;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.server-slow-badge:hover {
+  background: #4a3c1c;
 }

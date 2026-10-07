@@ -62,16 +62,42 @@ Each install starts with an **empty server list** — no servers are bundled or 
 - Small installers: English-only Chromium locale, maximum compression, spellcheck disabled (AppImage ~90 MB, .deb ~90 MB)
 - Cross-platform installers built by GitHub Actions
 
+### Diagnostics
+
+The game window's **View → Diagnostics** menu opens World Statistics, the logs folder, and the problem log. The problem log is `problem-log.jsonl` in the app data folder, one JSON line per issue. A line records when a warning or error started, when it ended (`resolved`, `closed`, or `quit`; a crash or an unresponsive page is an `event` written as soon as it happens), how long it lasted, the profile name when that name is safe to store, a short server id (`srv:` plus six hex characters), the issue id, category, severity, title, a short evidence string, and the client, Foundry, and game-system versions. It does not contain addresses, page content, document names, or account names. When the file grows past about 1 MB, the previous copy is kept as `problem-log.1.jsonl`. **Open problem log** on that menu opens the file.
+
+## Loading banner
+
+While a world is joining, the loading card shows a short bundled clip just above the fuel gauges. The banner is as wide as the card and keeps the clip's shape, so it scales with the window. It is stored with the app, so the join does not wait on a download, and nothing is added until that card is already on screen.
+
+When this server has a usual join time, playback waits until the remaining time is close to the clip, then speeds up or slows down (between half speed and double speed) so the clip ends as the game appears. The first join has no estimate, so the clip starts while the world is being set up and holds its last frame if it finishes early.
+
+The banner drops out, with no empty gap, when the card is under about 520 pixels wide or the window is under about 560 pixels tall, so the gauges and progress bar still fit. It stays off when the system asks for reduced motion, and it is removed when the loading card closes. The Loading banner is default on. The Join window **Loading banner** checkbox turns it off.
+
+## Slow server detection
+
+Some Foundry servers sit behind a reverse proxy that marks package files — scripts, style sheets, fonts, and the same kind of file under the system and module folders — with `Cache-Control: no-cache`, and only speaks HTTP/1.1. Every join then spends about 15–20 seconds re-checking those unchanged files before the loading screen can appear. The game window stays black while that happens.
+
+This client cannot change that safely. When it sees the pattern (dozens of those files, almost all marked no-cache), it remembers a yes/no flag for that saved server. The flag is the server's short id, a couple of counts, and whether you dismissed the note. No address is stored.
+
+The note shows in three places, and the same text is copied from each:
+
+- During the black screen, a card explains the wait and lets you copy a message for the server admin
+- On the loading card, a short line with the same copy button, plus Details for the full text
+- On that server's card in the Join window, an amber **Server config could be optimized — Copy message for admin** button
+
+The message tells an nginx admin how to turn on HTTP/2 and let browsers reuse those files while still picking up updates in the background. **Don't show again for this server** hides the note for that server only.
+
 ## Install
 
 You do **not** need Git or Node.js to run the app. Download the installer for your operating system from **[GitHub Releases](https://github.com/emirikol1/chris-custom-flc-multios/releases/latest)**.
 
-| OS | Download (v0.5.4) | Install |
+| OS | Download (v0.5.5) | Install |
 |----|-------------------|---------|
-| **Windows** | [ChrisCustomFLC-MultiOS-0.5.4-windows-setup.exe](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.4/ChrisCustomFLC-MultiOS-0.5.4-windows-setup.exe) | Double-click the installer, follow the prompts |
-| **macOS** | [ChrisCustomFLC-MultiOS-0.5.4-mac.dmg](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.4/ChrisCustomFLC-MultiOS-0.5.4-mac.dmg) | Open the DMG, drag the app to **Applications** |
-| **Linux (Mint / Ubuntu / Debian)** | [ChrisCustomFLC-MultiOS-0.5.4-linux.deb](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.4/ChrisCustomFLC-MultiOS-0.5.4-linux.deb) | Double-click the `.deb`, or `sudo apt install ./ChrisCustomFLC-MultiOS-0.5.4-linux.deb` |
-| **Linux (other)** | [ChrisCustomFLC-MultiOS-0.5.4-linux.AppImage](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.4/ChrisCustomFLC-MultiOS-0.5.4-linux.AppImage) | Right-click → **Properties** → allow executing, then double-click |
+| **Windows** | [ChrisCustomFLC-MultiOS-0.5.5-windows-setup.exe](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.5/ChrisCustomFLC-MultiOS-0.5.5-windows-setup.exe) | Double-click the installer, follow the prompts |
+| **macOS** | [ChrisCustomFLC-MultiOS-0.5.5-mac.dmg](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.5/ChrisCustomFLC-MultiOS-0.5.5-mac.dmg) | Open the DMG, drag the app to **Applications** |
+| **Linux (Mint / Ubuntu / Debian)** | [ChrisCustomFLC-MultiOS-0.5.5-linux.deb](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.5/ChrisCustomFLC-MultiOS-0.5.5-linux.deb) | Double-click the `.deb`, or `sudo apt install ./ChrisCustomFLC-MultiOS-0.5.5-linux.deb` |
+| **Linux (other)** | [ChrisCustomFLC-MultiOS-0.5.5-linux.AppImage](https://github.com/emirikol1/chris-custom-flc-multios/releases/download/v0.5.5/ChrisCustomFLC-MultiOS-0.5.5-linux.AppImage) | Right-click → **Properties** → allow executing, then double-click |
 
 Windows and Mac stop this app the first time you open it. The installers are not signed with an Apple or Microsoft developer certificate, so the computer treats the publisher as unknown and asks you to approve the app once. That approval is required before the app will open. Leave Windows Security and Mac security turned on. You are allowing this one app.
 

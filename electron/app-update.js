@@ -361,6 +361,66 @@ async function fetchLatestRelease(request = httpsRequest) {
   }
 }
 
+const APPROVAL_TEXT_MAX = 600;
+
+const WIN_APPROVAL_TEXT = [
+  'Get-ChildItem .\\ChrisCustomFLC-MultiOS-*-windows-setup.exe | Unblock-File',
+  'Start-Process (Get-ChildItem .\\ChrisCustomFLC-MultiOS-*-windows-setup.exe | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName',
+].join('\n');
+
+const MAC_QUARANTINE_TEXT = [
+  'xattr -dr com.apple.quarantine "/Applications/Chris\'s Custom FLC MultiOS.app"',
+  'open "/Applications/Chris\'s Custom FLC MultiOS.app"',
+].join('\n');
+
+const MAC_DAMAGED_TEXT = [
+  'codesign --force --deep --sign - "/Applications/Chris\'s Custom FLC MultiOS.app"',
+  'xattr -dr com.apple.quarantine "/Applications/Chris\'s Custom FLC MultiOS.app"',
+  'open "/Applications/Chris\'s Custom FLC MultiOS.app"',
+].join('\n');
+
+/**
+ * Fixed approval commands for a downloaded installer. No path and no address.
+ * @param {string} platform
+ * @returns {Array<{ label: string, text: string }>}
+ */
+function installApprovalCommands(platform) {
+  if (platform === 'win32') {
+    return [{
+      label: 'Windows: close the app, then paste this in PowerShell from your Downloads folder',
+      text: WIN_APPROVAL_TEXT,
+    }];
+  }
+  if (platform === 'darwin') {
+    return [
+      {
+        label: 'Mac: after dragging the app to Applications, paste this in Terminal',
+        text: MAC_QUARANTINE_TEXT,
+      },
+      {
+        label: 'Mac: if macOS says the app is damaged',
+        text: MAC_DAMAGED_TEXT,
+      },
+    ];
+  }
+  return [];
+}
+
+/**
+ * Renderer-facing command blocks: label and text only, text capped.
+ * @param {unknown} commands
+ * @returns {Array<{ label: string, text: string }>}
+ */
+function publicApprovalCommands(commands) {
+  if (!Array.isArray(commands)) return [];
+  const out = [];
+  for (const item of commands) {
+    if (!item || typeof item.label !== 'string' || typeof item.text !== 'string') continue;
+    out.push({ label: item.label, text: item.text.slice(0, APPROVAL_TEXT_MAX) });
+  }
+  return out;
+}
+
 /**
  * Check runs only from the Check for updates button.
  * Download runs only from the Download update button, after a check found a newer release.
@@ -385,7 +445,9 @@ async function checkForAppUpdate(opts) {
     if (!opts.download) return publicResult('available', plan);
     const dest = installerDestination(opts.downloadsDir, plan.fileName);
     await saveUrlToFile(plan.url, dest, opts.request || httpsRequest);
-    return publicResult('downloaded', plan);
+    const downloaded = publicResult('downloaded', plan);
+    downloaded.approvalCommands = installApprovalCommands(opts.platform);
+    return downloaded;
   } catch (err) {
     const code = err && err.code && typeof err.code === 'string' ? err.code : 'network';
     return publicResult(code);
@@ -401,6 +463,8 @@ module.exports = {
   installerDestination,
   planUpdate,
   checkForAppUpdate,
+  installApprovalCommands,
+  publicApprovalCommands,
   fetchLatestRelease,
   saveUrlToFile,
 };
