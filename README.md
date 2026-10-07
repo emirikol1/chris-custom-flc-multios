@@ -1,10 +1,27 @@
 # Chris's Custom FLC MultiOS
 
-A desktop join client for [Foundry Virtual Tabletop](https://foundryvtt.com/) on **Windows**, **macOS**, and **Linux**. Built with Electron and Chromium so you can connect to remote Foundry servers from a dedicated app instead of juggling browser tabs.
+This is a program you install on your computer to join a [Foundry Virtual Tabletop](https://foundryvtt.com/) game. It runs on **Windows**, **Mac**, and **Linux**. You do not need Git, Node, or a browser tab.
 
-**Inspired by [Foundry Lightweight Client (FLC)](https://github.com/phenomen/flc)** — the original open-source FLC by [phenomen](https://github.com/phenomen) ([website](https://foundry.ruleplaying.com/flc)). This project is a custom, cross-platform fork with additional features (notably FLC MUD). It is **not** affiliated with the original FLC project, [Foundry Virtual Tabletop](https://foundryvtt.com/), or Foundry Gaming, LLC.
+It is **not** the official Foundry app, and it is **not** the original [Foundry Lightweight Client](https://github.com/phenomen/flc). Your install starts with an empty game list. Nothing is copied in from another copy of FLC.
 
-Each install starts with an **empty server list** — no servers are bundled or imported from other FLC installs.
+## Get the app
+
+**[Download the latest version](https://github.com/emirikol1/chris-custom-flc-multios/releases/latest)**
+
+That page lists one file for each kind of computer. Download the one in this table, then install it the way the last column says.
+
+| Your computer | File to download | Then do this |
+|---------------|------------------|--------------|
+| **Windows** | The file whose name ends with `windows-setup.exe` | Double-click it and follow the prompts |
+| **Mac** | The file whose name ends with `.dmg` | Open it and drag the app to **Applications** |
+| **Linux Mint, Ubuntu, or Debian** | The file whose name ends with `.deb` | Double-click it |
+| **Other Linux** | The file whose name ends with `.AppImage` | Right-click it, open **Properties**, allow executing, then double-click it |
+
+The app in your menu or Applications folder is named **Chris's Custom FLC MultiOS**. Installing a newer copy updates that same icon. It does not add a second one.
+
+**Windows or a Mac may refuse to open it the first time.** That is normal. The installers are not signed with an Apple or Microsoft developer certificate, so the computer asks you to approve this one app. Leave your security software on. The buttons move between versions of Windows and macOS, so if you cannot find the button, use **[If Windows or Mac blocks the app](#if-windows-or-mac-blocks-the-app)**. Linux does not need that extra approval.
+
+When the app is open, **[add your game](#first-run)**.
 
 ## Features
 
@@ -67,41 +84,9 @@ Each install starts with an **empty server list** — no servers are bundled or 
 
 The game window's **View → Diagnostics** menu opens World Statistics, the logs folder, and the problem log. The problem log is `problem-log.jsonl` in the app data folder, one JSON line per issue. A line records when a warning or error started, when it ended (`resolved`, `closed`, or `quit`; a crash or an unresponsive page is an `event` written as soon as it happens), how long it lasted, the profile name when that name is safe to store, a short server id (`srv:` plus six hex characters), the issue id, category, severity, title, a short evidence string, and the client, Foundry, and game-system versions. It does not contain addresses, page content, document names, or account names. When the file grows past about 1 MB, the previous copy is kept as `problem-log.1.jsonl`. **Open problem log** on that menu opens the file.
 
-## Loading banner
+## If Windows or Mac blocks the app
 
-While a world is joining, the loading card shows a short bundled clip just above the fuel gauges. The banner is as wide as the card and keeps the clip's shape, so it scales with the window. It is stored with the app, so the join does not wait on a download, and nothing is added until that card is already on screen.
-
-When this server has a usual join time, the clip stays paused until about one clip length remains (at most a second early), then speeds up or slows down (between half speed and double speed) so it ends as the game appears. The first join has no estimate, so it stays paused through world setup and starts when the scene is drawn.
-
-The banner drops out, with no empty gap, when the card is under about 520 pixels wide or the window is under about 560 pixels tall, so the gauges and progress bar still fit. It stays off when the system asks for reduced motion, and it is removed when the loading card closes. The Loading banner is default on. The Join window **Loading banner** checkbox turns it off.
-
-The loading banner randomly plays one of two packaged clips, and the connecting and loading screens stay black.
-
-## Slow server detection
-
-Some Foundry servers sit behind a reverse proxy that marks package files — scripts, style sheets, fonts, and the same kind of file under the system and module folders — with `Cache-Control: no-cache`, and only speaks HTTP/1.1. Every join then spends about 15–20 seconds re-checking those unchanged files before the loading screen can appear. The game window stays black while that happens.
-
-This client cannot change that safely. When it sees the pattern (dozens of those files, almost all marked no-cache), it remembers a yes/no flag for that saved server. The flag is the server's short id, a couple of counts, and whether you dismissed the note. No address is stored.
-
-The note is shown only when the responses are nginx and the no-cache pattern matches the fix in the message. Worlds on forge-vtt.com are skipped, because that host is not a server the player can reconfigure.
-
-- During the black screen, a card explains the wait and lets you copy a message for the server admin
-- On that server's card in the Join window, an amber **Server config could be optimized — Copy message for admin** button
-
-The message tells an nginx admin how to turn on HTTP/2 and let browsers reuse those files while still picking up updates in the background. **Don't show again for this server** hides the note for that server only.
-
-## Install
-
-You do **not** need Git or Node.js to run the app. Download the installer for your operating system from **[GitHub Releases](https://github.com/emirikol1/chris-custom-flc-multios/releases/latest)**.
-
-Each installer name includes the app version. Pick the file for your system.
-
-| OS | File on the latest release | Install |
-|----|----------------------------|---------|
-| **Windows** | the `.exe` setup | Double-click the installer, follow the prompts |
-| **macOS** | the `.dmg` | Open the DMG, drag the app to **Applications** |
-| **Linux (Mint / Ubuntu / Debian)** | the `.deb` | Double-click the `.deb`, or run `sudo apt install` on the downloaded file |
-| **Linux (other)** | the `.AppImage` | Right-click → **Properties** → allow executing, then double-click |
+The download is at the [top of this page](#get-the-app). You do **not** need Git or Node.js.
 
 Windows and Mac stop this app the first time you open it. The installers are not signed with an Apple or Microsoft developer certificate, so the computer treats the publisher as unknown and asks you to approve the app once. That approval is required before the app will open. Leave Windows Security and Mac security turned on. You are allowing this one app.
 
@@ -112,7 +97,7 @@ Find the message on your screen, then do the step beside it.
 | **Windows** | Windows protected your PC | Click **More info**, then **Run anyway**. If that button is missing, right-click the installer, open **Properties**, check **Unblock**, and run it again. |
 | **Mac** | The app cannot be opened because the developer cannot be verified | Drag the app to **Applications**. Control-click it and choose **Open**, then click **Open** again. If **Open** is missing, open **System Settings → Privacy & Security** (older Macs: **System Preferences → Security & Privacy**) and click **Open Anyway**. |
 | **Mac** | The app is damaged and can't be opened | Use the Mac Terminal commands below. |
-| **Linux** | The installer opens normally | No extra approval. |
+| **Linux** | The installer opens normally | No extra approval. Double-click the downloaded file. If that does nothing, open it with your software installer. |
 
 Those on-screen buttons move between versions of Windows and macOS. When you cannot find the button, paste the commands below. On Windows, close this app first, then paste in PowerShell from your Downloads folder. On a Mac, drag the app to Applications first, then paste in Terminal.
 
@@ -138,7 +123,7 @@ xattr -dr com.apple.quarantine "/Applications/Chris's Custom FLC MultiOS.app"
 open "/Applications/Chris's Custom FLC MultiOS.app"
 ```
 
-All versions: **[Releases](https://github.com/emirikol1/chris-custom-flc-multios/releases)**.
+Older copies of the app are on **[Releases](https://github.com/emirikol1/chris-custom-flc-multios/releases)**. Use the latest one from the [top of this page](#get-the-app) unless you need an older copy.
 
 ## First run
 
@@ -149,7 +134,32 @@ All versions: **[Releases](https://github.com/emirikol1/chris-custom-flc-multios
 
 Saved data (servers, GPU prefs, MUD settings, logs) lives in the app's user data directory — not in the install folder.
 
-## Develop from source
+## More detail
+
+### Loading banner
+
+While a world is joining, the loading card shows a short bundled clip just above the fuel gauges. The banner is as wide as the card and keeps the clip's shape, so it scales with the window. It is stored with the app, so the join does not wait on a download, and nothing is added until that card is already on screen.
+
+When this server has a usual join time, the clip stays paused until about one clip length remains (at most a second early), then speeds up or slows down (between half speed and double speed) so it ends as the game appears. The first join has no estimate, so it stays paused through world setup and starts when the scene is drawn.
+
+The banner drops out, with no empty gap, when the card is under about 520 pixels wide or the window is under about 560 pixels tall, so the gauges and progress bar still fit. It stays off when the system asks for reduced motion, and it is removed when the loading card closes. The Loading banner is default on. The Join window **Loading banner** checkbox turns it off.
+
+The loading banner randomly plays one of two packaged clips, and the connecting and loading screens stay black.
+
+### Slow server detection
+
+Some Foundry servers sit behind a reverse proxy that marks package files — scripts, style sheets, fonts, and the same kind of file under the system and module folders — with `Cache-Control: no-cache`, and only speaks HTTP/1.1. Every join then spends about 15–20 seconds re-checking those unchanged files before the loading screen can appear. The game window stays black while that happens.
+
+This client cannot change that safely. When it sees the pattern (dozens of those files, almost all marked no-cache), it remembers a yes/no flag for that saved server. The flag is the server's short id, a couple of counts, and whether you dismissed the note. No address is stored.
+
+The note is shown only when the responses are nginx and the no-cache pattern matches the fix in the message. Worlds on forge-vtt.com are skipped, because that host is not a server the player can reconfigure.
+
+- During the black screen, a card explains the wait and lets you copy a message for the server admin
+- On that server's card in the Join window, an amber **Server config could be optimized — Copy message for admin** button
+
+The message tells an nginx admin how to turn on HTTP/2 and let browsers reuse those files while still picking up updates in the background. **Don't show again for this server** hides the note for that server only.
+
+### Develop from source
 
 Requirements: **Node.js 22+** and **npm**.
 
