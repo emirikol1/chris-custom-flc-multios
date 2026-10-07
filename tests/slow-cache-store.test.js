@@ -38,7 +38,8 @@ describe('createSlowCacheStore', () => {
     expect(text).not.toContain('host');
     expect(text).not.toContain('"url"');
     expect(text).toContain('srv:2de5ad');
-    expect(fs.statSync(filePath).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX mode bits; only assert the owner-only mode elsewhere.
+    if (process.platform !== 'win32') expect(fs.statSync(filePath).mode & 0o777).toBe(0o600);
 
     const again = createSlowCacheStore({ filePath });
     expect(again.get('srv:2de5ad')).toMatchObject({
