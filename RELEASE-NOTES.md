@@ -1,6 +1,10 @@
-# v0.6.5
+# v0.6.6
 
 Chris's Custom FLC MultiOS — Foundry VTT join client for Windows, macOS, and Linux.
+
+## What's new in 0.6.6
+
+- Foundry's Log Out stays on the join screen instead of signing you straight back in. You can leave, or sign in as a different user. The next Connect still uses the saved user.
 
 ## What's new in 0.6.5
 

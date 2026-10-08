@@ -22,10 +22,13 @@
  *   (nothing at all if the form never appears before the timeout)
  *
  * Intentional logout: the game page records `flc-autologin-skip` in
- * sessionStorage before Foundry returns to the join screen. That flag
- * survives the navigation and this script refuses to submit. A dropped
- * connection does not set the flag, so autologin still runs. Closing the
- * game window clears sessionStorage, so the next Connect autologins again.
+ * sessionStorage and synchronously tells the client to pause auto-login
+ * for this window before Foundry returns to the join screen. The pause
+ * still holds if Foundry wipes sessionStorage during log out. A dropped
+ * connection does not set either, so autologin still runs. Reaching /game
+ * again clears the pause. Closing the game window clears both, so the next
+ * Connect autologins again. Until then the join form stays empty, so a
+ * different user can sign in by hand.
  */
 
 /** sessionStorage key set when the user invokes Foundry's log out. */
@@ -261,19 +264,14 @@ function buildAutologinScript(creds) {
 }
 
 /**
- * How long the game page keeps looking for `game.logOut` (attempts × poll).
- * The click listener is armed immediately; this only covers logout calls that
- * do not go through the logout control.
- */
-const LOGOUT_INTENT_POLL_ATTEMPTS = 40;
-
-/**
  * Script injected into the Foundry game page. It remembers an intentional
- * log out in sessionStorage so the next join-page load does not autologin.
+ * log out so the next join-page load does not autologin.
  *
  * The flag is cleared when this script arms, which is a fresh game-page load.
  * A dropped socket does not call `game.logOut` and does not click the logout
- * control, so it does not set the flag.
+ * control, so it does not set the flag. The click listener is armed
+ * immediately (including clicks inside an open shadow root). `game.logOut`
+ * is wrapped whenever it appears, including after a slow world load.
  *
  * @returns {string}
  */
@@ -286,20 +284,45 @@ try {
   window.__flcLogoutIntentArmed = true;
 
   var KEY = ${keyLiteral};
+  var LOGOUT_SELECTOR = '[data-action="logout"], [data-action="logOut"], #logout, button.logout, a.logout';
   var mark = function () {
     try {
       if (window.sessionStorage) window.sessionStorage.setItem(KEY, '1');
+    } catch (ignored) {}
+    try {
+      if (window.flcGame && typeof window.flcGame.logoutIntent === 'function') {
+        window.flcGame.logoutIntent();
+      }
     } catch (ignored) {}
   };
   try {
     if (window.sessionStorage) window.sessionStorage.removeItem(KEY);
   } catch (ignored) {}
 
+  var matchesLogout = function (node) {
+    if (!node || typeof node.closest !== 'function') return false;
+    try {
+      return !!node.closest(LOGOUT_SELECTOR);
+    } catch (ignored) {
+      return false;
+    }
+  };
+
   if (document && typeof document.addEventListener === 'function') {
     document.addEventListener('click', function (ev) {
-      var target = ev && (ev.target || ev.srcElement);
-      if (!target || typeof target.closest !== 'function') return;
-      if (target.closest('[data-action="logout"], #logout, button.logout, a.logout')) mark();
+      if (!ev) return;
+      var path = typeof ev.composedPath === 'function' ? ev.composedPath() : null;
+      if (path && path.length) {
+        for (var i = 0; i < path.length; i += 1) {
+          if (matchesLogout(path[i])) {
+            mark();
+            return;
+          }
+        }
+        return;
+      }
+      var target = ev.target || ev.srcElement;
+      if (matchesLogout(target)) mark();
     }, true);
   }
 
@@ -318,10 +341,8 @@ try {
   };
 
   if (!arm() && typeof window.setInterval === 'function') {
-    var tries = 0;
     var timer = window.setInterval(function () {
-      tries += 1;
-      if (arm() || tries >= ${LOGOUT_INTENT_POLL_ATTEMPTS}) {
+      if (arm()) {
         try { window.clearInterval(timer); } catch (ignored) {}
       }
     }, ${AUTOLOGIN_POLL_MS});

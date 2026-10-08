@@ -6,7 +6,7 @@ const { readGpuPrefs, writeGpuPrefs } = require('./gpu-prefs');
 const { logDebug, logInfo, logWarn, logError, setLogLevel, getLogLevel, MAIN_LOG_PATH } = require('./logger');
 const { shortServerHash } = require('./log-ids');
 const { classifyWebglReason } = require('./webgl-reason');
-const { buildAutologinScript, isJoinPageUrl } = require('./foundry-autologin');
+const { buildAutologinScript, buildLogoutIntentScript, isGamePageUrl, isJoinPageUrl } = require('./foundry-autologin');
 const { buildTelemetryScript, buildLoadingDetailsScript, buildReferenceLookupScript } = require('./foundry-telemetry');
 const { createBadUrlStore, shouldRecordFailure, formatBadUrlsText, failurePathname } = require('./bad-urls');
 const { formatBytes, percentile, liveFromSnapshot } = require('./join-telemetry');
@@ -97,6 +97,12 @@ const gameWindowsById = new Map();
 const liveGameWindows = new Set();
 /** @type {WeakMap<import('electron').WebContents, { username: string, label: string }>} */
 const autologinContextByWebContents = new WeakMap();
+/**
+ * Set when this window's player used Foundry's Log Out.
+ * Cleared on the next /game document, and gone when the window closes.
+ * @type {WeakMap<import('electron').WebContents, boolean>}
+ */
+const autologinPausedByWebContents = new WeakMap();
 /** @type {WeakMap<import('electron').BrowserWindow, boolean>} */
 const centerPromptsByWin = new WeakMap();
 /** @type {WeakMap<import('electron').BrowserWindow, boolean>} */
@@ -465,6 +471,10 @@ async function maybeAutologin(win, creds) {
   if (!isJoinPageUrl(currentUrl)) {
     return false;
   }
+  if (autologinPausedByWebContents.get(win.webContents) === true) {
+    logInfo('[game-window] autologin skipped after logout');
+    return false;
+  }
   try {
     await win.webContents.executeJavaScript(
       buildAutologinScript({ username: creds.username, password: creds.password }),
@@ -474,6 +484,31 @@ async function maybeAutologin(win, creds) {
   } catch {
     logWarn('[game-window] autologin inject failed');
     return false;
+  }
+}
+
+/**
+ * Install the in-page logout watcher on a fresh /game document, and clear any
+ * logout pause. The player is in a world again, so a later dropped connection
+ * may auto-login. The join screen does not call this, so a logout pause
+ * survives until then.
+ *
+ * @param {import('electron').BrowserWindow} win
+ */
+async function armLogoutIntent(win) {
+  if (!win || win.isDestroyed()) return;
+  let pageUrl = '';
+  try {
+    pageUrl = win.webContents.getURL();
+  } catch {
+    return;
+  }
+  if (!isGamePageUrl(pageUrl)) return;
+  autologinPausedByWebContents.delete(win.webContents);
+  try {
+    await win.webContents.executeJavaScript(buildLogoutIntentScript());
+  } catch {
+    logWarn('[game-window] logout intent inject failed');
   }
 }
 
@@ -2672,6 +2707,7 @@ function openGameWindow(payload, gpuPrefsPath) {
       pageUrl = '';
     }
     if (deps.hub && hubId && isJoinPageUrl(pageUrl)) deps.hub.mark(hubId, 'joinPageLoaded');
+    await armLogoutIntent(win);
     const injected = await maybeAutologin(win, creds);
     if (injected && deps.hub && hubId) deps.hub.mark(hubId, 'autologinArmed');
     await applyCenterPrompts(win);
@@ -2679,6 +2715,7 @@ function openGameWindow(payload, gpuPrefsPath) {
     restoreSessionLayout(win, ctx).catch(() => {});
   });
   win.webContents.on('dom-ready', () => {
+    armLogoutIntent(win).catch(() => {});
     slowCache.onDomReady(win);
     win.webContents.executeJavaScript(buildTelemetryScript()).then(() => {
       if (samplingByWin.get(win) === true && !win.isDestroyed()) {
@@ -2914,6 +2951,11 @@ function registerGameIpc(gpuPrefsPath, integration) {
       win = null;
     }
     if (win && liveGameWindows.has(win)) openStatsFor(win);
+  });
+
+  ipcMain.on('foundry:logout-intent', (event) => {
+    autologinPausedByWebContents.set(event.sender, true);
+    event.returnValue = true;
   });
 
   ipcMain.on('foundry:autologin-status', (event, status) => {

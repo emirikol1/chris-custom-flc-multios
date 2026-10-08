@@ -26,6 +26,9 @@ contextBridge.exposeInMainWorld('flcGame', {
   autologinStatus: (status) => {
     ipcRenderer.send('foundry:autologin-status', status);
   },
+  logoutIntent: () => {
+    ipcRenderer.sendSync('foundry:logout-intent');
+  },
   layoutSnapshot: (snapshot) => {
     ipcRenderer.send('foundry:layout-snapshot', snapshot);
   },

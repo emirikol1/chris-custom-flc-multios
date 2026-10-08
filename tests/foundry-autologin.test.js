@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AUTOLOGIN_ARMED_RESULT,
@@ -603,6 +604,103 @@ describe('logout intent marker', () => {
     expect(win.game.logOut()).toBe('ok');
     expect(win.sessionStorage.getItem(AUTOLOGIN_SKIP_KEY)).toBe('1');
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('keeps watching for game.logOut through a slow world load', () => {
+    const win = {
+      sessionStorage: makeSessionStorage(),
+      setInterval: (...args) => setInterval(...args),
+      clearInterval: (...args) => clearInterval(...args),
+    };
+    runLogout(win, { addEventListener() {} });
+    vi.advanceTimersByTime(AUTOLOGIN_POLL_MS * 80);
+    expect(vi.getTimerCount()).toBe(1);
+
+    win.game = { logOut() { return 'left'; } };
+    vi.advanceTimersByTime(AUTOLOGIN_POLL_MS);
+    expect(win.game.logOut()).toBe('left');
+    expect(win.sessionStorage.getItem(AUTOLOGIN_SKIP_KEY)).toBe('1');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('tells the client to stay on the join screen before Foundry can wipe storage', () => {
+    const intents = [];
+    const storage = makeSessionStorage();
+    storage.clear = () => {
+      storage.removeItem(AUTOLOGIN_SKIP_KEY);
+    };
+    const win = {
+      sessionStorage: storage,
+      flcGame: {
+        logoutIntent() {
+          intents.push('intent');
+        },
+      },
+      setInterval: (...args) => setInterval(...args),
+      clearInterval: (...args) => clearInterval(...args),
+      game: {
+        logOut() {
+          storage.clear();
+          return 'left';
+        },
+      },
+    };
+
+    runLogout(win, { addEventListener() {} });
+    expect(win.game.logOut()).toBe('left');
+    expect(intents).toEqual(['intent']);
+    expect(storage.getItem(AUTOLOGIN_SKIP_KEY)).toBeNull();
+  });
+
+  it('records a logout click inside an open shadow root', () => {
+    const intents = [];
+    const win = {
+      sessionStorage: makeSessionStorage(),
+      flcGame: {
+        logoutIntent() {
+          intents.push('intent');
+        },
+      },
+      setInterval: (...args) => setInterval(...args),
+      clearInterval: (...args) => clearInterval(...args),
+      game: { logOut() {} },
+    };
+    let click = null;
+    const doc = {
+      addEventListener(type, fn, capture) {
+        if (type === 'click') click = { fn, capture };
+      },
+    };
+    const button = {
+      closest(sel) {
+        return String(sel).includes('[data-action="logout"]') ? button : null;
+      },
+    };
+    const host = { closest() { return null; } };
+
+    runLogout(win, doc);
+    click.fn({
+      target: host,
+      composedPath() {
+        return [button, host];
+      },
+    });
+
+    expect(win.sessionStorage.getItem(AUTOLOGIN_SKIP_KEY)).toBe('1');
+    expect(intents).toEqual(['intent']);
+  });
+});
+
+describe('logout stays disconnected in the game window', () => {
+  it('arms the logout watcher on the game page and pauses auto-login from that signal', () => {
+    const gameWindow = readFileSync(new URL('../electron/game-window.js', import.meta.url), 'utf8');
+    const preload = readFileSync(new URL('../electron/preload-game.js', import.meta.url), 'utf8');
+
+    expect(gameWindow).toContain('buildLogoutIntentScript()');
+    expect(gameWindow).toContain("ipcMain.on('foundry:logout-intent'");
+    expect(gameWindow).toContain('autologin skipped after logout');
+    expect(gameWindow).toContain('isGamePageUrl');
+    expect(preload).toContain("ipcRenderer.sendSync('foundry:logout-intent')");
   });
 });
 
